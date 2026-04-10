@@ -31,6 +31,14 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: DEBUG SECRET
+        run: |
+          if [ -z "${{ secrets.TF_API_TOKEN }}" ]; then
+            echo "❌ TF_API_TOKEN is EMPTY"
+            exit 1
+          else
+            echo "✅ TF_API_TOKEN is PRESENT"
+          fi
 
       - name: Terraform Init
         run: terraform init -input=false
