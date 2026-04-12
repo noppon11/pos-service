@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"pos-service/internal/domain"
+
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -25,6 +27,17 @@ func (m *MockPosService) GetHealth(ctx context.Context) error {
 func (m *MockPosService) GetHealthByTenantID(ctx context.Context, tenantID string) error {
 	args := m.Called(ctx, tenantID)
 	return args.Error(0)
+}
+
+func (m *MockPosService) GetBranchesByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error) {
+	args := m.Called(ctx, tenantID)
+
+	var data []domain.BranchResponse
+	if v := args.Get(0); v != nil {
+		data = v.([]domain.BranchResponse)
+	}
+
+	return data, args.Error(1)
 }
 
 type MockTenantValidator struct {
@@ -117,13 +130,14 @@ func TestGetHealthByTenantID_InvalidTenantID(t *testing.T) {
 
 	tenantID := "AURA"
 
-	mockValidator.On("TenantIDValidation", tenantID).
+	mockValidator.
+		On("TenantIDValidation", tenantID).
 		Return(errors.New("tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")).
 		Once()
 
 	h := NewPosHandler(mockService, mockValidator)
 
-	c, w := setupGinContext(http.MethodGet, "/tenants/"+tenantID+"/health")
+	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/health")
 	c.Params = gin.Params{{Key: "tenant_id", Value: tenantID}}
 
 	h.GetHealthByTenantID(c)
@@ -150,7 +164,7 @@ func TestGetHealthByTenantID_ServiceUnavailable(t *testing.T) {
 
 	h := NewPosHandler(mockService, mockValidator)
 
-	c, w := setupGinContext(http.MethodGet, "/tenants/"+tenantID+"/health")
+	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/health")
 	c.Params = gin.Params{{Key: "tenant_id", Value: tenantID}}
 
 	h.GetHealthByTenantID(c)
@@ -181,7 +195,7 @@ func TestGetHealthByTenantID_Success(t *testing.T) {
 
 	h := NewPosHandler(mockService, mockValidator)
 
-	c, w := setupGinContext(http.MethodGet, "/tenants/"+tenantID+"/health")
+	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/health")
 	c.Params = gin.Params{{Key: "tenant_id", Value: tenantID}}
 
 	h.GetHealthByTenantID(c)
@@ -194,6 +208,135 @@ func TestGetHealthByTenantID_Success(t *testing.T) {
 	assert.Equal(t, "pos-service", resp["service"])
 	assert.Equal(t, "ok", resp["status"])
 	assert.Equal(t, tenantID, resp["tenant_id"])
+	assert.NotNil(t, resp["timestamp"])
+
+	mockValidator.AssertExpectations(t)
+	mockService.AssertExpectations(t)
+}
+
+func TestGetBranchesByTenantID_Success(t *testing.T) {
+	mockService := new(MockPosService)
+	mockValidator := new(MockTenantValidator)
+
+	tenantID := "aura-bkk"
+	branches := []domain.BranchResponse{
+		{
+			BranchID:   "bkk-001",
+			BranchName: "Aura Siam",
+			Status:     "active",
+		},
+		{
+			BranchID:   "bkk-002",
+			BranchName: "Aura Ari",
+			Status:     "inactive",
+		},
+	}
+
+	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
+	mockService.On("GetBranchesByTenantID", mock.Anything, tenantID).Return(branches, nil).Once()
+
+	h := NewPosHandler(mockService, mockValidator)
+
+	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/branches")
+	c.Params = gin.Params{{Key: "tenant_id", Value: tenantID}}
+
+	h.GetBranchesByTenantID(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp domain.ListBranchesResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, tenantID, resp.TenantID)
+	assert.Len(t, resp.Data, 2)
+	assert.Equal(t, "bkk-001", resp.Data[0].BranchID)
+	assert.Equal(t, "Aura Siam", resp.Data[0].BranchName)
+	assert.Equal(t, "active", resp.Data[0].Status)
+
+	mockValidator.AssertExpectations(t)
+	mockService.AssertExpectations(t)
+}
+
+func TestGetBranchesByTenantID_InvalidTenantID(t *testing.T) {
+	mockService := new(MockPosService)
+	mockValidator := new(MockTenantValidator)
+
+	tenantID := "AURA"
+
+	mockValidator.
+		On("TenantIDValidation", tenantID).
+		Return(errors.New("tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")).
+		Once()
+
+	h := NewPosHandler(mockService, mockValidator)
+
+	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/branches")
+	c.Params = gin.Params{{Key: "tenant_id", Value: tenantID}}
+
+	h.GetBranchesByTenantID(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only", resp["error"])
+
+	mockValidator.AssertExpectations(t)
+	mockService.AssertNotCalled(t, "GetBranchesByTenantID", mock.Anything, mock.Anything)
+}
+
+func TestGetBranchesByTenantID_EmptyList(t *testing.T) {
+	mockService := new(MockPosService)
+	mockValidator := new(MockTenantValidator)
+
+	tenantID := "aura-xyz"
+	branches := []domain.BranchResponse{}
+
+	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
+	mockService.On("GetBranchesByTenantID", mock.Anything, tenantID).Return(branches, nil).Once()
+
+	h := NewPosHandler(mockService, mockValidator)
+
+	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/branches")
+	c.Params = gin.Params{{Key: "tenant_id", Value: tenantID}}
+
+	h.GetBranchesByTenantID(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp domain.ListBranchesResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, tenantID, resp.TenantID)
+	assert.Len(t, resp.Data, 0)
+
+	mockValidator.AssertExpectations(t)
+	mockService.AssertExpectations(t)
+}
+
+func TestGetBranchesByTenantID_InternalError(t *testing.T) {
+	mockService := new(MockPosService)
+	mockValidator := new(MockTenantValidator)
+
+	tenantID := "aura-bkk"
+
+	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
+	mockService.On("GetBranchesByTenantID", mock.Anything, tenantID).Return(nil, errors.New("repository error")).Once()
+
+	h := NewPosHandler(mockService, mockValidator)
+
+	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/branches")
+	c.Params = gin.Params{{Key: "tenant_id", Value: tenantID}}
+
+	h.GetBranchesByTenantID(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, "repository error", resp["error"])
 
 	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
