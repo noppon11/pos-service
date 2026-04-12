@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"pos-service/internal/domain"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,22 +11,17 @@ import (
 
 type PosHandler struct {
 	posService PosService
-	validator  TenantValidator
 }
 
 type PosService interface {
 	GetHealth(ctx context.Context) error
 	GetHealthByTenantID(ctx context.Context, tenantID string) error
+	GetBranchesByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
 }
 
-type TenantValidator interface {
-	TenantIDValidation(tenantID string) error
-}
-
-func NewPosHandler(s PosService, v TenantValidator) *PosHandler {
+func NewPosHandler(s PosService) *PosHandler {
 	return &PosHandler{
 		posService: s,
-		validator:  v,
 	}
 }
 
@@ -33,8 +29,7 @@ func (h *PosHandler) GetHealth(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 	defer cancel()
 
-	err := h.posService.GetHealth(ctx)
-	if err != nil {
+	if err := h.posService.GetHealth(ctx); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"service":   "pos-service",
 			"status":    "unhealthy",
@@ -51,6 +46,32 @@ func (h *PosHandler) GetHealth(c *gin.Context) {
 	})
 }
 
+func (h *PosHandler) GetBranchesByTenantID(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+
+	tenantID := c.Param("tenant_id")
+	if tenantID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "tenant_id is required",
+		})
+		return
+	}
+
+	data, err := h.posService.GetBranchesByTenantID(ctx, tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, domain.ListBranchesResponse{
+		TenantID: tenantID,
+		Data:     data,
+	})
+}
+
 func (h *PosHandler) GetHealthByTenantID(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 	defer cancel()
@@ -63,15 +84,7 @@ func (h *PosHandler) GetHealthByTenantID(c *gin.Context) {
 		return
 	}
 
-	if err := h.validator.TenantIDValidation(tenantID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	err := h.posService.GetHealthByTenantID(ctx, tenantID)
-	if err != nil {
+	if err := h.posService.GetHealthByTenantID(ctx, tenantID); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"service":   "pos-service",
 			"status":    "unhealthy",
@@ -86,5 +99,6 @@ func (h *PosHandler) GetHealthByTenantID(c *gin.Context) {
 		"service":   "pos-service",
 		"status":    "ok",
 		"tenant_id": tenantID,
+		"timestamp": time.Now().Unix(),
 	})
 }

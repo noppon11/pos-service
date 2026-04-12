@@ -5,12 +5,26 @@ import (
 	"errors"
 	"testing"
 
+	"pos-service/internal/domain"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
 type MockDB struct {
 	mock.Mock
+}
+
+type MockRepo struct {
+	data []domain.BranchResponse
+	err  error
+}
+
+func (m *MockRepo) ListByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.data, nil
 }
 
 func (m *MockDB) PingContext(ctx context.Context) error {
@@ -24,6 +38,11 @@ type MockValidator struct {
 
 func (m *MockValidator) TenantIDValidation(tenantID string) error {
 	args := m.Called(tenantID)
+	return args.Error(0)
+}
+
+func (m *MockValidator) BranchValidation(branch domain.BranchResponse) error {
+	args := m.Called(branch)
 	return args.Error(0)
 }
 
@@ -136,4 +155,47 @@ func TestGetHealthByTenantID_Success(t *testing.T) {
 
 	mockValidator.AssertExpectations(t)
 	mockDB.AssertExpectations(t)
+}
+
+func TestGetBranchesByTenantID_Success(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+			},
+			{
+				BranchID:   "bkk-002",
+				BranchName: "Aura Ari",
+				Status:     "inactive",
+			},
+		},
+	}
+	svc := NewPosService(nil, repo)
+
+	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
+	assert.NoError(t, err)
+	assert.Len(t, got, 2)
+	assert.Equal(t, "bkk-001", got[0].BranchID)
+}
+
+func TestGetBranchesByTenantID_InvalidStatus(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "pending",
+			},
+		},
+	}
+
+	svc := NewPosService(nil, repo)
+
+	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
+
+	assert.Error(t, err)
+	assert.Nil(t, got)
+	assert.Equal(t, "status must be active or inactive", err.Error())
 }

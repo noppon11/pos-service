@@ -6,56 +6,37 @@ import (
 	"os"
 
 	"pos-service/internal/handler"
+	"pos-service/internal/repository"
 	"pos-service/internal/routes"
 	"pos-service/internal/service"
-	"pos-service/internal/validator"
 
-	_ "github.com/lib/pq" // 👈 ตัวนี้สำคัญมาก
+	_ "github.com/lib/pq"
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	// =========================
-	// 1. Load config (simple version)
-	// =========================
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
 
-	// =========================
-	// 2. Init DB
-	// =========================
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("failed to connect db: %v", err)
 	}
 
-	// optional: ping DB on startup
 	if err := db.Ping(); err != nil {
 		log.Fatalf("db unreachable: %v", err)
 	}
 
-	// =========================
-	// 3. Init dependencies
-	// =========================
-	posValidator := &validator.PosValidator{}
-	posService := service.NewPosService(db, posValidator)
-	posHandler := handler.NewPosHandler(posService, posValidator)
+	branchRepo := repository.NewInMemoryBranchRepository()
 
-	// =========================
-	// 4. Init router
-	// =========================
+	posService := service.NewPosService(db, branchRepo)
+	posHandler := handler.NewPosHandler(posService)
+
 	r := gin.Default()
-
-	// =========================
-	// 5. Register routes
-	// =========================
 	routes.SetupRoutes(r, posHandler)
 
-	// =========================
-	// 6. Run server
-	// =========================
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
