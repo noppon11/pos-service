@@ -9,6 +9,8 @@ import (
 	"pos-service/internal/repository"
 	"pos-service/internal/routes"
 	"pos-service/internal/service"
+	"pos-service/internal/validator"
+
 
 	_ "github.com/lib/pq"
 	"github.com/gin-gonic/gin"
@@ -29,10 +31,10 @@ func main() {
 		log.Fatalf("db unreachable: %v", err)
 	}
 
+	posValidator := &validator.PosValidator{}
 	branchRepo := repository.NewInMemoryBranchRepository()
-
 	posService := service.NewPosService(db, branchRepo)
-	posHandler := handler.NewPosHandler(posService)
+	posHandler := handler.NewPosHandler(posService, posValidator)
 
 	r := gin.Default()
 	routes.SetupRoutes(r, posHandler)
