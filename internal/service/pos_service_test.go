@@ -15,6 +15,11 @@ type MockDB struct {
 	mock.Mock
 }
 
+func (m *MockDB) PingContext(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 type MockRepo struct {
 	data []domain.BranchResponse
 	err  error
@@ -27,22 +32,12 @@ func (m *MockRepo) ListByTenantID(ctx context.Context, tenantID string) ([]domai
 	return m.data, nil
 }
 
-func (m *MockDB) PingContext(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
-}
-
 type MockValidator struct {
 	mock.Mock
 }
 
 func (m *MockValidator) TenantIDValidation(tenantID string) error {
 	args := m.Called(tenantID)
-	return args.Error(0)
-}
-
-func (m *MockValidator) BranchValidation(branch domain.BranchResponse) error {
-	args := m.Called(branch)
 	return args.Error(0)
 }
 
@@ -97,7 +92,6 @@ func TestGetHealthByTenantID_InvalidTenantID(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")
-
 	mockValidator.AssertExpectations(t)
 	mockDB.AssertNotCalled(t, "PingContext", mock.Anything)
 }
@@ -125,7 +119,6 @@ func TestGetHealthByTenantID_DBDown(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "db down")
-
 	mockValidator.AssertExpectations(t)
 	mockDB.AssertExpectations(t)
 }
@@ -152,7 +145,6 @@ func TestGetHealthByTenantID_Success(t *testing.T) {
 	err := svc.GetHealthByTenantID(context.Background(), "tenant_001")
 
 	assert.NoError(t, err)
-
 	mockValidator.AssertExpectations(t)
 	mockDB.AssertExpectations(t)
 }
@@ -172,12 +164,72 @@ func TestGetBranchesByTenantID_Success(t *testing.T) {
 			},
 		},
 	}
-	svc := NewPosService(nil, repo)
+	mockValidator := new(MockValidator)
+
+	mockValidator.
+		On("TenantIDValidation", "aura-bkk").
+		Return(nil).
+		Once()
+
+	svc := &PosService{
+		branchRepo: repo,
+		validator:  mockValidator,
+	}
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
+
 	assert.NoError(t, err)
 	assert.Len(t, got, 2)
 	assert.Equal(t, "bkk-001", got[0].BranchID)
+	assert.Equal(t, "Aura Siam", got[0].BranchName)
+	assert.Equal(t, "active", got[0].Status)
+	mockValidator.AssertExpectations(t)
+}
+
+func TestGetBranchesByTenantID_InvalidTenantID(t *testing.T) {
+	repo := &MockRepo{}
+	mockValidator := new(MockValidator)
+
+	mockValidator.
+		On("TenantIDValidation", "AURA").
+		Return(errors.New("tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")).
+		Once()
+
+	svc := &PosService{
+		branchRepo: repo,
+		validator:  mockValidator,
+	}
+
+	got, err := svc.GetBranchesByTenantID(context.Background(), "AURA")
+
+	assert.Error(t, err)
+	assert.Nil(t, got)
+	assert.EqualError(t, err, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")
+	mockValidator.AssertExpectations(t)
+}
+
+func TestGetBranchesByTenantID_RepoError(t *testing.T) {
+	repo := &MockRepo{
+		err: errors.New("repository error"),
+	}
+	mockValidator := new(MockValidator)
+
+	mockValidator.
+		On("TenantIDValidation", "aura-bkk").
+		Return(nil).
+		Once()
+
+	svc := &PosService{
+		branchRepo: repo,
+		validator:  mockValidator,
+	}
+
+	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
+
+	assert.Error(t, err)
+	assert.Nil(t, got)
+	assert.EqualError(t, err, "repository error")
+	mockValidator.AssertExpectations(t)
 }
 
 func TestGetBranchesByTenantID_InvalidStatus(t *testing.T) {
@@ -190,12 +242,82 @@ func TestGetBranchesByTenantID_InvalidStatus(t *testing.T) {
 			},
 		},
 	}
+	mockValidator := new(MockValidator)
 
-	svc := NewPosService(nil, repo)
+	mockValidator.
+		On("TenantIDValidation", "aura-bkk").
+		Return(nil).
+		Once()
+
+	svc := &PosService{
+		branchRepo: repo,
+		validator:  mockValidator,
+	}
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
 
 	assert.Error(t, err)
 	assert.Nil(t, got)
-	assert.Equal(t, "status must be active or inactive", err.Error())
+	assert.EqualError(t, err, "status must be active or inactive")
+	mockValidator.AssertExpectations(t)
+}
+
+func TestGetBranchesByTenantID_EmptyBranchID(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "",
+				BranchName: "Aura Siam",
+				Status:     "active",
+			},
+		},
+	}
+	mockValidator := new(MockValidator)
+
+	mockValidator.
+		On("TenantIDValidation", "aura-bkk").
+		Return(nil).
+		Once()
+
+	svc := &PosService{
+		branchRepo: repo,
+		validator:  mockValidator,
+	}
+
+	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
+
+	assert.Error(t, err)
+	assert.Nil(t, got)
+	assert.EqualError(t, err, "branch_id is required")
+	mockValidator.AssertExpectations(t)
+}
+
+func TestGetBranchesByTenantID_EmptyBranchName(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "bkk-001",
+				BranchName: "",
+				Status:     "active",
+			},
+		},
+	}
+	mockValidator := new(MockValidator)
+
+	mockValidator.
+		On("TenantIDValidation", "aura-bkk").
+		Return(nil).
+		Once()
+
+	svc := &PosService{
+		branchRepo: repo,
+		validator:  mockValidator,
+	}
+
+	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
+
+	assert.Error(t, err)
+	assert.Nil(t, got)
+	assert.EqualError(t, err, "branch_name is required")
+	mockValidator.AssertExpectations(t)
 }

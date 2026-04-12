@@ -121,37 +121,10 @@ func TestGetHealthByTenantID_MissingTenantID(t *testing.T) {
 	mockService.AssertNotCalled(t, "GetHealthByTenantID", mock.Anything, mock.Anything)
 }
 
-func TestGetHealthByTenantID_InvalidTenantID(t *testing.T) {
-	mockService := new(MockPosService)
-	mockValidator := new(MockTenantValidator)
-
-	tenantID := "AURA"
-
-	h := NewPosHandler(mockService)
-
-	c, w := setupGinContext(http.MethodGet, "/tenants/"+tenantID+"/health")
-	c.Params = gin.Params{{Key: "tenant_id", Value: tenantID}}
-
-	h.GetHealthByTenantID(c)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-
-	var resp map[string]string
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.NoError(t, err)
-	assert.Equal(t, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only", resp["error"])
-
-	mockValidator.AssertExpectations(t)
-	mockService.AssertNotCalled(t, "GetHealthByTenantID", mock.Anything, mock.Anything)
-}
-
 func TestGetHealthByTenantID_ServiceUnavailable(t *testing.T) {
 	mockService := new(MockPosService)
-	mockValidator := new(MockTenantValidator)
-
 	tenantID := "tenant_001"
 
-	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
 	mockService.On("GetHealthByTenantID", mock.Anything, tenantID).Return(errors.New("db down")).Once()
 
 	h := NewPosHandler(mockService)
@@ -172,17 +145,13 @@ func TestGetHealthByTenantID_ServiceUnavailable(t *testing.T) {
 	assert.Equal(t, "db down", resp["error"])
 	assert.NotNil(t, resp["timestamp"])
 
-	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
 }
 
 func TestGetHealthByTenantID_Success(t *testing.T) {
 	mockService := new(MockPosService)
-	mockValidator := new(MockTenantValidator)
-
 	tenantID := "tenant_001"
 
-	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
 	mockService.On("GetHealthByTenantID", mock.Anything, tenantID).Return(nil).Once()
 
 	h := NewPosHandler(mockService)
@@ -202,14 +171,11 @@ func TestGetHealthByTenantID_Success(t *testing.T) {
 	assert.Equal(t, tenantID, resp["tenant_id"])
 	assert.NotNil(t, resp["timestamp"])
 
-	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
 }
 
 func TestGetBranchesByTenantID_Success(t *testing.T) {
 	mockService := new(MockPosService)
-	mockValidator := new(MockTenantValidator)
-
 	tenantID := "aura-bkk"
 	branches := []domain.BranchResponse{
 		{
@@ -224,8 +190,10 @@ func TestGetBranchesByTenantID_Success(t *testing.T) {
 		},
 	}
 
-	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
-	mockService.On("GetBranchesByTenantID", mock.Anything, tenantID).Return(branches, nil).Once()
+	mockService.
+		On("GetBranchesByTenantID", mock.Anything, tenantID).
+		Return(branches, nil).
+		Once()
 
 	h := NewPosHandler(mockService)
 
@@ -245,18 +213,17 @@ func TestGetBranchesByTenantID_Success(t *testing.T) {
 	assert.Equal(t, "Aura Siam", resp.Data[0].BranchName)
 	assert.Equal(t, "active", resp.Data[0].Status)
 
-	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
 }
 
 func TestGetBranchesByTenantID_InvalidTenantID(t *testing.T) {
 	mockService := new(MockPosService)
-	mockValidator := new(MockTenantValidator)
 
 	tenantID := "AURA"
 
-	mockValidator.On("TenantIDValidation", tenantID).
-		Return(errors.New("tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")).
+	mockService.
+		On("GetBranchesByTenantID", mock.Anything, tenantID).
+		Return(nil, errors.New("tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")).
 		Once()
 
 	h := NewPosHandler(mockService)
@@ -266,25 +233,21 @@ func TestGetBranchesByTenantID_InvalidTenantID(t *testing.T) {
 
 	h.GetBranchesByTenantID(c)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var resp map[string]string
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
 	assert.Equal(t, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only", resp["error"])
 
-	mockValidator.AssertExpectations(t)
-	mockService.AssertNotCalled(t, "GetBranchesByTenantID", mock.Anything, mock.Anything)
+	mockService.AssertExpectations(t)
 }
 
 func TestGetBranchesByTenantID_EmptyList(t *testing.T) {
 	mockService := new(MockPosService)
-	mockValidator := new(MockTenantValidator)
 
 	tenantID := "aura-xyz"
 	branches := []domain.BranchResponse{}
-
-	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
 	mockService.On("GetBranchesByTenantID", mock.Anything, tenantID).Return(branches, nil).Once()
 
 	h := NewPosHandler(mockService)
@@ -301,18 +264,13 @@ func TestGetBranchesByTenantID_EmptyList(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, tenantID, resp.TenantID)
 	assert.Len(t, resp.Data, 0)
-
-	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
 }
 
 func TestGetBranchesByTenantID_InternalError(t *testing.T) {
 	mockService := new(MockPosService)
-	mockValidator := new(MockTenantValidator)
-
 	tenantID := "aura-bkk"
 
-	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
 	mockService.On("GetBranchesByTenantID", mock.Anything, tenantID).Return(nil, errors.New("repository error")).Once()
 
 	h := NewPosHandler(mockService)
@@ -329,6 +287,5 @@ func TestGetBranchesByTenantID_InternalError(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "repository error", resp["error"])
 
-	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
 }
