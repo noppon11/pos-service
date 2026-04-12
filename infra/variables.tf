@@ -9,3 +9,8 @@ variable "environment" {
   type        = string
   default     = "production"
 }
+
+variable "github_token" {
+  type      = string
+  sensitive = true
+}
