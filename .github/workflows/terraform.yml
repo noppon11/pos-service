@@ -18,6 +18,10 @@ jobs:
     name: Terraform Plan
     runs-on: ubuntu-latest
 
+    env:
+      TF_WORKING_DIR: infra
+      TF_VAR_github_token: ${{ secrets.GH_ADMIN_TOKEN }}
+
     defaults:
       run:
         shell: bash
@@ -31,13 +35,23 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-      - name: DEBUG SECRET
+
+      - name: Debug Terraform Cloud Token
         run: |
           if [ -z "${{ secrets.TF_API_TOKEN }}" ]; then
             echo "❌ TF_API_TOKEN is EMPTY"
             exit 1
           else
             echo "✅ TF_API_TOKEN is PRESENT"
+          fi
+
+      - name: Debug GitHub Token
+        run: |
+          if [ -z "${{ secrets.GH_ADMIN_TOKEN }}" ]; then
+            echo "❌ GH_ADMIN_TOKEN is EMPTY"
+            exit 1
+          else
+            echo "✅ GH_ADMIN_TOKEN is PRESENT"
           fi
 
       - name: Terraform Init
