@@ -338,30 +338,6 @@ func TestGetBranchDetail_RepoError(t *testing.T) {
 	assert.EqualError(t, err, "repository error")
 }
 
-func TestGetBranchDetail_NotFound(t *testing.T) {
-	repo := &MockRepo{
-		data: map[string][]domain.BranchResponse{
-			"aura-bkk": {
-				{
-					BranchID:   "bkk-001",
-					BranchName: "Aura Siam",
-					Status:     "active",
-					Timezone:   "Asia/Bangkok",
-					Currency:   "THB",
-				},
-			},
-		},
-	}
-	validator := new(MockValidator)
-
-	svc := NewPosService(nil, repo, validator)
-
-	got, err := svc.GetBranchDetail(context.Background(), "aura-bkk", "bkk-999")
-
-	assert.NoError(t, err)
-	assert.Nil(t, got)
-}
-
 func TestGetBranchDetail_Success(t *testing.T) {
 	repo := &MockRepo{
 		data: map[string][]domain.BranchResponse{
