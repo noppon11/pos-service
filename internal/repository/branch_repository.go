@@ -8,4 +8,5 @@ import (
 
 type BranchRepository interface {
 	ListByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
+	ByID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
 }

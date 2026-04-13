@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"pos-service/internal/domain"
 )
@@ -11,9 +10,13 @@ import (
 var (
 	ErrDBNotConfigured         = errors.New("database is not configured")
 	ErrBranchRepoNotConfigured = errors.New("branch repository is not configured")
-	ErrBranchIDRequired        = errors.New("branch_id is required")
-	ErrBranchNameRequired      = errors.New("branch_name is required")
-	ErrInvalidBranchStatus     = errors.New("status must be active or inactive")
+	ErrValidatorNotConfigured  = errors.New("validator not configured")
+	ErrInvalidBranchStatus           = errors.New("status must be active or inactive")
+	ErrInvalidBranchCurrency         = errors.New("currency must be 3 uppercase letters")
+	ErrInvalidBranchCurrencyRequired = errors.New("currency is required")
+	ErrInvalidBranchTimezoneRequired = errors.New("timezone is required")
+	ErrBranchIDRequired              = errors.New("branch_id is required")
+	ErrBranchNameRequired            = errors.New("branch_name is required")
 )
 
 type DB interface {
@@ -22,17 +25,24 @@ type DB interface {
 
 type BranchRepository interface {
 	ListByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
+	GetByTenantIDAndBranchID(ctx context.Context, tenantID string, branchID string) (*domain.BranchResponse, error)
 }
 
 type PosService struct {
 	db         DB
 	branchRepo BranchRepository
+	validator  Validator
 }
 
-func NewPosService(db DB, branchRepo BranchRepository) *PosService {
+type Validator interface {
+	BranchValidation(branch domain.BranchResponse) error
+}
+
+func NewPosService(db DB, branchRepo BranchRepository, v Validator) *PosService {
 	return &PosService{
 		db:         db,
 		branchRepo: branchRepo,
+		validator:  v,
 	}
 }
 
@@ -63,7 +73,7 @@ func (s *PosService) GetBranchesByTenantID(ctx context.Context, tenantID string)
 	}
 
 	for _, branch := range branches {
-		if err := validateBranch(branch); err != nil {
+		if err := s.validateBranch(branch); err != nil {
 			return nil, err
 		}
 	}
@@ -71,20 +81,30 @@ func (s *PosService) GetBranchesByTenantID(ctx context.Context, tenantID string)
 	return branches, nil
 }
 
-func validateBranch(branch domain.BranchResponse) error {
-	if strings.TrimSpace(branch.BranchID) == "" {
-		return ErrBranchIDRequired
+func (s *PosService) GetBranchDetail(ctx context.Context, tenantID, branchID string) (*domain.BranchResponse, error) {
+	if s.branchRepo == nil {
+		return nil, ErrBranchRepoNotConfigured
 	}
 
-	if strings.TrimSpace(branch.BranchName) == "" {
-		return ErrBranchNameRequired
+	branch, err := s.branchRepo.GetByTenantIDAndBranchID(ctx, tenantID, branchID)
+	if err != nil {
+		return nil, err
 	}
 
-	if !isValidBranchStatus(branch.Status) {
-		return ErrInvalidBranchStatus
+	if err := s.validateBranch(*branch); err != nil {
+		return nil, err
 	}
 
-	return nil
+	return branch, nil
+}
+
+func (s *PosService) validateBranch(branch domain.BranchResponse) error {
+
+	if s.validator == nil {
+		return ErrValidatorNotConfigured
+	}
+
+	return s.validator.BranchValidation(branch)
 }
 
 func isValidBranchStatus(status string) bool {

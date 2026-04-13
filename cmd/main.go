@@ -33,7 +33,7 @@ func main() {
 
 	posValidator := &validator.PosValidator{}
 	branchRepo := repository.NewInMemoryBranchRepository()
-	posService := service.NewPosService(db, branchRepo)
+	posService := service.NewPosService(db, branchRepo, posValidator)
 	posHandler := handler.NewPosHandler(posService, posValidator)
 
 	r := gin.Default()
