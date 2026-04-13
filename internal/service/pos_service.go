@@ -23,14 +23,14 @@ type DB interface {
 	PingContext(ctx context.Context) error
 }
 
-type NewInMemoryBranchRepository interface {
+type BranchRepository interface {
 	ListByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
 	GetByTenantIDAndBranchID(ctx context.Context, tenantID string, branchID string) (*domain.BranchResponse, error)
 }
 
 type PosService struct {
 	db         DB
-	branchRepo NewInMemoryBranchRepository
+	branchRepo BranchRepository
 	validator  Validator
 }
 
@@ -38,7 +38,7 @@ type Validator interface {
 	BranchValidation(branch domain.BranchResponse) error
 }
 
-func NewPosService(db DB, branchRepo NewInMemoryBranchRepository, v Validator) *PosService {
+func NewPosService(db DB, branchRepo BranchRepository, v Validator) *PosService {
 	return &PosService{
 		db:         db,
 		branchRepo: branchRepo,
@@ -89,10 +89,6 @@ func (s *PosService) GetBranchDetail(ctx context.Context, tenantID, branchID str
 	branch, err := s.branchRepo.GetByTenantIDAndBranchID(ctx, tenantID, branchID)
 	if err != nil {
 		return nil, err
-	}
-
-	if branch == nil {
-		return nil, nil
 	}
 
 	if err := s.validateBranch(*branch); err != nil {

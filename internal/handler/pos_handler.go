@@ -5,16 +5,11 @@ import (
 	"net/http"
 	"pos-service/internal/domain"
 	"time"
-	"errors"
 
 	"github.com/gin-gonic/gin"
 )
 
 const requestTimeout = 2 * time.Second
-var (
-    ErrTenantNotFound = errors.New("tenant not found")
-    ErrBranchNotFound = errors.New("branch not found")
-)
 
 type PosHandler struct {
 	posService PosService
@@ -166,14 +161,7 @@ func (h *PosHandler) GetByTenantIDAndBranchID(c *gin.Context){
 
 	data, err := h.posService.GetBranchDetail(ctx, tenantID, branchID)
 	if err != nil {
-		switch err {
-		case ErrTenantNotFound:
-			c.JSON(404, gin.H{"error": err.Error()})
-		case ErrBranchNotFound:
-			c.JSON(404, gin.H{"error": err.Error()})
-		default:
-			c.JSON(500, gin.H{"error": err.Error()})
-		}
+		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
