@@ -16,18 +16,20 @@ func TestTenantIDValidation(t *testing.T) {
 		name      string
 		input     string
 		wantError bool
+		wantMsg   string
 	}{
-		{"valid dash", "aura-bkk", false},
-		{"valid underscore", "tenant_001", false},
-		{"valid mixed", "aura_bkk-001", false},
-		{"min length 3", "abc", false},
-		{"max length 50", strings.Repeat("a", 50), false},
-		{"empty", "", true},
-		{"too short", "a", true},
-		{"too long", strings.Repeat("a", 51), true},
-		{"uppercase", "AURA", true},
-		{"invalid char", "***", true},
-		{"space inside", "aura bkk", true},
+		{"valid dash", "aura-bkk", false, ""},
+		{"valid underscore", "tenant_001", false, ""},
+		{"valid mixed", "aura_bkk-001", false, ""},
+		{"min length 3", "abc", false, ""},
+		{"max length 50", strings.Repeat("a", 50), false, ""},
+		{"empty", "", true, "tenant_id is required"},
+		{"spaces only", "   ", true, "tenant_id is required"},
+		{"too short", "a", true, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only"},
+		{"too long", strings.Repeat("a", 51), true, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only"},
+		{"uppercase", "AURA", true, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only"},
+		{"invalid char", "***", true, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only"},
+		{"space inside", "aura bkk", true, "tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only"},
 	}
 
 	for _, tt := range tests {
@@ -36,6 +38,7 @@ func TestTenantIDValidation(t *testing.T) {
 
 			if tt.wantError {
 				assert.Error(t, err)
+				assert.Equal(t, tt.wantMsg, err.Error())
 			} else {
 				assert.NoError(t, err)
 			}
@@ -58,6 +61,8 @@ func TestBranchValidation(t *testing.T) {
 				BranchID:   "bkk-001",
 				BranchName: "Aura Siam",
 				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THB",
 			},
 			wantError: false,
 		},
@@ -67,6 +72,8 @@ func TestBranchValidation(t *testing.T) {
 				BranchID:   "bkk-002",
 				BranchName: "Aura Ari",
 				Status:     "inactive",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THB",
 			},
 			wantError: false,
 		},
@@ -76,6 +83,8 @@ func TestBranchValidation(t *testing.T) {
 				BranchID:   "",
 				BranchName: "Aura Siam",
 				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THB",
 			},
 			wantError: true,
 			wantMsg:   "branch_id is required",
@@ -86,6 +95,8 @@ func TestBranchValidation(t *testing.T) {
 				BranchID:   "   ",
 				BranchName: "Aura Siam",
 				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THB",
 			},
 			wantError: true,
 			wantMsg:   "branch_id is required",
@@ -96,6 +107,8 @@ func TestBranchValidation(t *testing.T) {
 				BranchID:   "bkk-001",
 				BranchName: "",
 				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THB",
 			},
 			wantError: true,
 			wantMsg:   "branch_name is required",
@@ -106,6 +119,8 @@ func TestBranchValidation(t *testing.T) {
 				BranchID:   "bkk-001",
 				BranchName: "   ",
 				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THB",
 			},
 			wantError: true,
 			wantMsg:   "branch_name is required",
@@ -116,6 +131,8 @@ func TestBranchValidation(t *testing.T) {
 				BranchID:   "bkk-001",
 				BranchName: "Aura Siam",
 				Status:     "pending",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THB",
 			},
 			wantError: true,
 			wantMsg:   "status must be active or inactive",
@@ -126,9 +143,95 @@ func TestBranchValidation(t *testing.T) {
 				BranchID:   "bkk-001",
 				BranchName: "Aura Siam",
 				Status:     "",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THB",
 			},
 			wantError: true,
 			wantMsg:   "status must be active or inactive",
+		},
+		{
+			name: "empty timezone",
+			input: domain.BranchResponse{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+				Timezone:   "",
+				Currency:   "THB",
+			},
+			wantError: true,
+			wantMsg:   "timezone is required",
+		},
+		{
+			name: "timezone only spaces",
+			input: domain.BranchResponse{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+				Timezone:   "   ",
+				Currency:   "THB",
+			},
+			wantError: true,
+			wantMsg:   "timezone is required",
+		},
+		{
+			name: "empty currency",
+			input: domain.BranchResponse{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "",
+			},
+			wantError: true,
+			wantMsg:   "currency is required",
+		},
+		{
+			name: "currency only spaces",
+			input: domain.BranchResponse{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "   ",
+			},
+			wantError: true,
+			wantMsg:   "currency is required",
+		},
+		{
+			name: "currency lowercase",
+			input: domain.BranchResponse{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "thb",
+			},
+			wantError: true,
+			wantMsg:   "currency must be 3 uppercase letters",
+		},
+		{
+			name: "currency too short",
+			input: domain.BranchResponse{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "TH",
+			},
+			wantError: true,
+			wantMsg:   "currency must be 3 uppercase letters",
+		},
+		{
+			name: "currency too long",
+			input: domain.BranchResponse{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+				Timezone:   "Asia/Bangkok",
+				Currency:   "THBA",
+			},
+			wantError: true,
+			wantMsg:   "currency must be 3 uppercase letters",
 		},
 	}
 
@@ -184,7 +287,13 @@ func TestBranchIDValidation(t *testing.T) {
 			name:      "empty",
 			input:     "",
 			wantError: true,
-			wantMsg:   "branch_id is required", // 🔥 ต้อง fix code ก่อน
+			wantMsg:   "branch_id is required",
+		},
+		{
+			name:      "spaces only",
+			input:     "   ",
+			wantError: true,
+			wantMsg:   "branch_id is required",
 		},
 		{
 			name:      "too short",

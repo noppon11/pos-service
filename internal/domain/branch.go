@@ -4,6 +4,8 @@ type BranchResponse struct {
 	BranchID   string `json:"branch_id"`
 	BranchName string `json:"branch_name"`
 	Status     string `json:"status"`
+	Timezone   string `json:"timezone"`
+    Currency   string `json:"currency"`
 }
 
 type ListBranchesResponse struct {

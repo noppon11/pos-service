@@ -5,18 +5,23 @@ import (
 	"net/http"
 	"pos-service/internal/domain"
 	"time"
+	"errors"
 
 	"github.com/gin-gonic/gin"
 )
 
 const requestTimeout = 2 * time.Second
+var (
+    ErrTenantNotFound = errors.New("tenant not found")
+    ErrBranchNotFound = errors.New("branch not found")
+)
 
 type PosHandler struct {
 	posService PosService
-	validator  TenantValidator
+	validator  Validator
 }
 
-type TenantValidator interface {
+type Validator interface {
 	TenantIDValidation(tenantID string) error
 	BranchIDValidation(branchID string) error
 }
@@ -24,11 +29,11 @@ type TenantValidator interface {
 type PosService interface {
 	GetHealth(ctx context.Context) error
 	GetHealthByTenantID(ctx context.Context, tenantID string) error
-	GetBranchByID(ctx context.Context, branchID string) (*domain.BranchResponse, error)
+	GetBranchDetail(ctx context.Context, tenantID string, branchID string) (*domain.BranchResponse, error)
 	GetBranchesByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
 }
 
-func NewPosHandler(s PosService, v TenantValidator) *PosHandler {
+func NewPosHandler(s PosService, v Validator) *PosHandler {
 	return &PosHandler{
 		posService: s,
 		validator:  v,
@@ -145,7 +150,7 @@ func (h *PosHandler) getValidBranchID(c *gin.Context) (string, bool) {
 	return branchID, true
 }
 
-func (h *PosHandler) GetBranchByID(c *gin.Context){
+func (h *PosHandler) GetByTenantIDAndBranchID(c *gin.Context){
 	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
 	defer cancel()
 
@@ -154,11 +159,21 @@ func (h *PosHandler) GetBranchByID(c *gin.Context){
 		return
 	}
 
-	data, err := h.posService.GetBranchByID(ctx, branchID)
+	tenantID, ok := h.getValidTenantID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.posService.GetBranchDetail(ctx, tenantID, branchID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+		switch err {
+		case ErrTenantNotFound:
+			c.JSON(404, gin.H{"error": err.Error()})
+		case ErrBranchNotFound:
+			c.JSON(404, gin.H{"error": err.Error()})
+		default:
+			c.JSON(500, gin.H{"error": err.Error()})
+		}
 		return
 	}
 
@@ -166,5 +181,7 @@ func (h *PosHandler) GetBranchByID(c *gin.Context){
 		BranchID: branchID,
 		BranchName: data.BranchName,
 		Status: data.Status,
+		Timezone: data.Timezone,
+		Currency: data.Currency,
 	})
 }

@@ -4,6 +4,12 @@ import (
 	"context"
 
 	"pos-service/internal/domain"
+	"errors"
+)
+
+var (
+    ErrTenantNotFound = errors.New("tenant not found")
+    ErrBranchNotFound = errors.New("branch not found")
 )
 
 type InMemoryBranchRepository struct {
@@ -44,13 +50,17 @@ func (r *InMemoryBranchRepository) ListByTenantID(ctx context.Context, tenantID 
 	return branches, nil
 }
 
-func (r *InMemoryBranchRepository) ByID(ctx context.Context, branchID string) (*domain.BranchResponse, error) {
-	for _, branches := range r.data {
-		for _, b := range branches {
-			if b.BranchID == branchID {
-				return &b, nil
-			}
+func (r *InMemoryBranchRepository) GetByTenantIDAndBranchID(ctx context.Context, tenantID, branchID string) (*domain.BranchResponse, error) {
+	branches, ok := r.data[tenantID]
+	if !ok {
+		return nil, ErrTenantNotFound
+	}
+
+	for i := range branches {
+		if branches[i].BranchID == branchID {
+			return &branches[i], nil
 		}
 	}
-	return nil, nil
+
+	return nil, ErrBranchNotFound
 }
