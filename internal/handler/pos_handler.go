@@ -18,11 +18,13 @@ type PosHandler struct {
 
 type TenantValidator interface {
 	TenantIDValidation(tenantID string) error
+	BranchIDValidation(branchID string) error
 }
 
 type PosService interface {
 	GetHealth(ctx context.Context) error
 	GetHealthByTenantID(ctx context.Context, tenantID string) error
+	GetBranchByID(ctx context.Context, branchID string) (*domain.BranchResponse, error)
 	GetBranchesByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
 }
 
@@ -122,4 +124,47 @@ func (h *PosHandler) getValidTenantID(c *gin.Context) (string, bool) {
 	}
 
 	return tenantID, true
+}
+
+func (h *PosHandler) getValidBranchID(c *gin.Context) (string, bool) {
+	branchID := c.Param("branch_id")
+	if branchID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "branch_id is required",
+		})
+		return "", false
+	}
+
+	if err := h.validator.BranchIDValidation(branchID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return "", false
+	}
+
+	return branchID, true
+}
+
+func (h *PosHandler) GetBranchByID(c *gin.Context){
+	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
+	defer cancel()
+
+	branchID, ok := h.getValidBranchID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.posService.GetBranchByID(ctx, branchID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, &domain.BranchResponse{
+		BranchID: branchID,
+		BranchName: data.BranchName,
+		Status: data.Status,
+	})
 }

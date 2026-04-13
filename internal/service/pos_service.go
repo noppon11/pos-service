@@ -20,16 +20,17 @@ type DB interface {
 	PingContext(ctx context.Context) error
 }
 
-type BranchRepository interface {
+type NewInMemoryBranchRepository interface {
 	ListByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
+	ByID(ctx context.Context, branchID string) (*domain.BranchResponse, error)
 }
 
 type PosService struct {
 	db         DB
-	branchRepo BranchRepository
+	branchRepo NewInMemoryBranchRepository
 }
 
-func NewPosService(db DB, branchRepo BranchRepository) *PosService {
+func NewPosService(db DB, branchRepo NewInMemoryBranchRepository) *PosService {
 	return &PosService{
 		db:         db,
 		branchRepo: branchRepo,
@@ -69,6 +70,27 @@ func (s *PosService) GetBranchesByTenantID(ctx context.Context, tenantID string)
 	}
 
 	return branches, nil
+}
+
+func (s *PosService) GetBranchByID(ctx context.Context, branchID string) (*domain.BranchResponse, error) {
+	if s.branchRepo == nil {
+		return nil, ErrBranchRepoNotConfigured
+	}
+
+	branch, err := s.branchRepo.ByID(ctx, branchID)
+	if err != nil {
+		return nil, err
+	}
+
+	if branch == nil {
+		return nil, nil
+	}
+
+	if err := validateBranch(*branch); err != nil {
+		return nil, err
+	}
+
+	return branch, nil
 }
 
 func validateBranch(branch domain.BranchResponse) error {

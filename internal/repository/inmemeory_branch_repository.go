@@ -43,3 +43,14 @@ func (r *InMemoryBranchRepository) ListByTenantID(ctx context.Context, tenantID 
 	}
 	return branches, nil
 }
+
+func (r *InMemoryBranchRepository) ByID(ctx context.Context, branchID string) (*domain.BranchResponse, error) {
+	for _, branches := range r.data {
+		for _, b := range branches {
+			if b.BranchID == branchID {
+				return &b, nil
+			}
+		}
+	}
+	return nil, nil
+}

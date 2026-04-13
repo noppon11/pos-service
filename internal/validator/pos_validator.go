@@ -18,14 +18,14 @@ type BranchValidator interface {
 	BranchValidation(branch domain.BranchResponse) error
 }
 
-var tenantIDRegex = regexp.MustCompile(`^[a-z0-9_-]{3,50}$`)
+var IDRegex = regexp.MustCompile(`^[a-z0-9_-]{3,50}$`)
 
 func (v *PosValidator) TenantIDValidation(tenantID string) error {
 	if tenantID == "" {
 		return errors.New("tenant_id is required")
 	}
 
-	if !tenantIDRegex.MatchString(tenantID) {
+	if !IDRegex.MatchString(tenantID) {
 		return errors.New("tenant_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")
 	}
 
@@ -43,6 +43,18 @@ func (v *PosValidator) BranchValidation(branch domain.BranchResponse) error {
 
 	if !isValidBranchStatus(branch.Status) {
 		return errors.New("status must be active or inactive")
+	}
+
+	return nil
+}
+
+func (v *PosValidator) BranchIDValidation(branchID string) error {
+	if branchID == "" {
+		return errors.New("tenant_id is required")
+	}
+
+	if !IDRegex.MatchString(branchID) {
+		return errors.New("branch_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")
 	}
 
 	return nil

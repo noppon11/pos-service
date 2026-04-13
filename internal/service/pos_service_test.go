@@ -32,6 +32,21 @@ func (m *MockRepo) ListByTenantID(ctx context.Context, tenantID string) ([]domai
 	return m.data, nil
 }
 
+func (m *MockRepo) ByID(ctx context.Context, branchID string) (*domain.BranchResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	for _, branch := range m.data {
+		if branch.BranchID == branchID {
+			b := branch
+			return &b, nil
+		}
+	}
+
+	return nil, nil
+}
+
 func TestGetHealth_DBNotConfigured(t *testing.T) {
 	svc := NewPosService(nil, nil)
 
@@ -213,6 +228,126 @@ func TestGetBranchesByTenantID_EmptyBranchName(t *testing.T) {
 	svc := NewPosService(nil, repo)
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
+
+	assert.Nil(t, got)
+	assert.ErrorIs(t, err, ErrBranchNameRequired)
+}
+
+func TestGetBranchByID_RepoNotConfigured(t *testing.T) {
+	svc := NewPosService(nil, nil)
+
+	got, err := svc.GetBranchByID(context.Background(), "bkk-001")
+
+	assert.Nil(t, got)
+	assert.ErrorIs(t, err, ErrBranchRepoNotConfigured)
+}
+
+func TestGetBranchByID_RepoError(t *testing.T) {
+	repo := &MockRepo{
+		err: errors.New("repository error"),
+	}
+
+	svc := NewPosService(nil, repo)
+
+	got, err := svc.GetBranchByID(context.Background(), "bkk-001")
+
+	assert.Nil(t, got)
+	assert.EqualError(t, err, "repository error")
+}
+
+func TestGetBranchByID_NotFound(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+			},
+		},
+	}
+
+	svc := NewPosService(nil, repo)
+
+	got, err := svc.GetBranchByID(context.Background(), "not-found")
+
+	assert.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+func TestGetBranchByID_Success(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "active",
+			},
+		},
+	}
+
+	svc := NewPosService(nil, repo)
+
+	got, err := svc.GetBranchByID(context.Background(), "bkk-001")
+
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Equal(t, "bkk-001", got.BranchID)
+	assert.Equal(t, "Aura Siam", got.BranchName)
+	assert.Equal(t, "active", got.Status)
+}
+
+func TestGetBranchByID_InvalidStatus(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "bkk-001",
+				BranchName: "Aura Siam",
+				Status:     "pending",
+			},
+		},
+	}
+
+	svc := NewPosService(nil, repo)
+
+	got, err := svc.GetBranchByID(context.Background(), "bkk-001")
+
+	assert.Nil(t, got)
+	assert.ErrorIs(t, err, ErrInvalidBranchStatus)
+}
+
+func TestGetBranchByID_EmptyBranchID(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "",
+				BranchName: "Aura Siam",
+				Status:     "active",
+			},
+		},
+	}
+
+	svc := NewPosService(nil, repo)
+
+	got, err := svc.GetBranchByID(context.Background(), "")
+
+	assert.Nil(t, got)
+	assert.ErrorIs(t, err, ErrBranchIDRequired)
+}
+
+func TestGetBranchByID_EmptyBranchName(t *testing.T) {
+	repo := &MockRepo{
+		data: []domain.BranchResponse{
+			{
+				BranchID:   "bkk-001",
+				BranchName: "",
+				Status:     "active",
+			},
+		},
+	}
+
+	svc := NewPosService(nil, repo)
+
+	got, err := svc.GetBranchByID(context.Background(), "bkk-001")
 
 	assert.Nil(t, got)
 	assert.ErrorIs(t, err, ErrBranchNameRequired)
