@@ -5,80 +5,70 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	appErr "pos-service/internal/errors"
 )
 
-func TestInMemoryBranchRepository_ListByTenantID(t *testing.T) {
+func TestNewInMemoryBranchRepository(t *testing.T) {
 	repo := NewInMemoryBranchRepository()
 
-	t.Run("found tenant aura-bkk", func(t *testing.T) {
-		data, err := repo.ListByTenantID(context.Background(), "aura-bkk")
-
-		assert.NoError(t, err)
-		assert.Len(t, data, 2)
-
-		assert.Equal(t, "bkk-001", data[0].BranchID)
-		assert.Equal(t, "Aura Siam", data[0].BranchName)
-		assert.Equal(t, "active", data[0].Status)
-
-		assert.Equal(t, "bkk-002", data[1].BranchID)
-		assert.Equal(t, "Aura Ari", data[1].BranchName)
-		assert.Equal(t, "inactive", data[1].Status)
-	})
-
-	t.Run("found tenant aura-cnx", func(t *testing.T) {
-		data, err := repo.ListByTenantID(context.Background(), "aura-cnx")
-
-		assert.NoError(t, err)
-		assert.Len(t, data, 1)
-
-		assert.Equal(t, "cnx-001", data[0].BranchID)
-		assert.Equal(t, "Aura Chiang Mai", data[0].BranchName)
-		assert.Equal(t, "active", data[0].Status)
-	})
-
-	t.Run("unknown tenant returns empty list", func(t *testing.T) {
-		data, err := repo.ListByTenantID(context.Background(), "unknown")
-
-		assert.NoError(t, err)
-		assert.NotNil(t, data)
-		assert.Len(t, data, 0)
-	})
+	assert.NotNil(t, repo)
+	assert.NotNil(t, repo.data)
+	assert.Contains(t, repo.data, "aura-bkk")
+	assert.Contains(t, repo.data, "aura-cnx")
 }
 
-func TestInMemoryBranchRepository_GetByTenantIDAndBranchID(t *testing.T) {
+func TestInMemoryBranchRepository_ListByTenantID_Success(t *testing.T) {
 	repo := NewInMemoryBranchRepository()
 
-	t.Run("found branch in tenant", func(t *testing.T) {
-		data, err := repo.GetByTenantIDAndBranchID(context.Background(), "aura-bkk", "bkk-001")
+	got, err := repo.ListByTenantID(context.Background(), "aura-bkk")
 
-		assert.NoError(t, err)
-		assert.NotNil(t, data)
-		assert.Equal(t, "bkk-001", data.BranchID)
-		assert.Equal(t, "Aura Siam", data.BranchName)
-		assert.Equal(t, "active", data.Status)
-	})
+	assert.NoError(t, err)
+	assert.Len(t, got, 2)
+	assert.Equal(t, "bkk-001", got[0].BranchID)
+	assert.Equal(t, "Aura Siam", got[0].BranchName)
+	assert.Equal(t, "active", got[0].Status)
+	assert.Equal(t, "Asia/Bangkok", got[0].Timezone)
+	assert.Equal(t, "THB", got[0].Currency)
+}
 
-	t.Run("found another branch in tenant", func(t *testing.T) {
-		data, err := repo.GetByTenantIDAndBranchID(context.Background(), "aura-bkk", "bkk-002")
+func TestInMemoryBranchRepository_ListByTenantID_TenantNotFound(t *testing.T) {
+	repo := NewInMemoryBranchRepository()
 
-		assert.NoError(t, err)
-		assert.NotNil(t, data)
-		assert.Equal(t, "bkk-002", data.BranchID)
-		assert.Equal(t, "Aura Ari", data.BranchName)
-		assert.Equal(t, "inactive", data.Status)
-	})
+	got, err := repo.ListByTenantID(context.Background(), "unknown-tenant")
 
-	t.Run("unknown tenant returns ErrTenantNotFound", func(t *testing.T) {
-		data, err := repo.GetByTenantIDAndBranchID(context.Background(), "unknown", "bkk-001")
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Len(t, got, 0)
+}
 
-		assert.Nil(t, data)
-		assert.ErrorIs(t, err, ErrTenantNotFound)
-	})
+func TestInMemoryBranchRepository_GetByTenantIDAndBranchID_Success(t *testing.T) {
+	repo := NewInMemoryBranchRepository()
 
-	t.Run("branch not found in existing tenant returns ErrBranchNotFound", func(t *testing.T) {
-		data, err := repo.GetByTenantIDAndBranchID(context.Background(), "aura-bkk", "bkk-999")
+	got, err := repo.GetByTenantIDAndBranchID(context.Background(), "aura-bkk", "bkk-001")
 
-		assert.Nil(t, data)
-		assert.ErrorIs(t, err, ErrBranchNotFound)
-	})
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Equal(t, "bkk-001", got.BranchID)
+	assert.Equal(t, "Aura Siam", got.BranchName)
+	assert.Equal(t, "active", got.Status)
+	assert.Equal(t, "Asia/Bangkok", got.Timezone)
+	assert.Equal(t, "THB", got.Currency)
+}
+
+func TestInMemoryBranchRepository_GetByTenantIDAndBranchID_TenantNotFound(t *testing.T) {
+	repo := NewInMemoryBranchRepository()
+
+	got, err := repo.GetByTenantIDAndBranchID(context.Background(), "unknown-tenant", "bkk-001")
+
+	assert.Nil(t, got)
+	assert.ErrorIs(t, err, appErr.ErrTenantNotFound)
+}
+
+func TestInMemoryBranchRepository_GetByTenantIDAndBranchID_BranchNotFound(t *testing.T) {
+	repo := NewInMemoryBranchRepository()
+
+	got, err := repo.GetByTenantIDAndBranchID(context.Background(), "aura-bkk", "not-found")
+
+	assert.Nil(t, got)
+	assert.ErrorIs(t, err, appErr.ErrBranchNotFound)
 }

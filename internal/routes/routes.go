@@ -7,8 +7,11 @@ import (
 
 func SetupRoutes(r *gin.Engine, posHandler *handler.PosHandler) {
 	r.GET("/health", posHandler.GetHealth)
-	r.GET("/api/v1/tenants/:tenant_id/health", posHandler.GetHealthByTenantID)
-	r.GET("/api/v1/tenants/:tenant_id/branches", posHandler.GetBranchesByTenantID)
-	r.GET("/api/v1/tenants/:tenant_id/branches/:branch_id", posHandler.GetByTenantIDAndBranchID)
-
+	r.GET("/readiness", posHandler.Readiness)
+	api := r.Group("/api/v1")
+	{
+		api.GET("/tenants/:tenant_id/health", posHandler.GetHealthByTenantID)
+		api.GET("/tenants/:tenant_id/branches", posHandler.GetBranchesByTenantID)
+		api.GET("/tenants/:tenant_id/branches/:branch_id", posHandler.GetByTenantIDAndBranchID)
+	}
 }

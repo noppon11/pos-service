@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"pos-service/internal/domain"
+	appErr "pos-service/internal/errors"
 )
 
 type PosValidator struct{}
@@ -18,15 +19,6 @@ type TenantValidator interface {
 type BranchValidator interface {
 	BranchValidation(branch domain.BranchResponse) error
 }
-
-var (
-	ErrBranchIDRequired              = errors.New("branch_id is required")
-	ErrBranchNameRequired            = errors.New("branch_name is required")
-	ErrInvalidBranchStatus           = errors.New("status must be active or inactive")
-	ErrInvalidBranchCurrency         = errors.New("currency must be 3 uppercase letters")
-	ErrInvalidBranchCurrencyRequired = errors.New("currency is required")
-	ErrInvalidBranchTimezoneRequired = errors.New("timezone is required")
-)
 
 var (
 	IDRegex       = regexp.MustCompile(`^[a-z0-9_-]{3,50}$`)
@@ -59,27 +51,27 @@ func (v *PosValidator) BranchIDValidation(branchID string) error {
 
 func (v *PosValidator) BranchValidation(branch domain.BranchResponse) error {
 	if strings.TrimSpace(branch.BranchID) == "" {
-		return ErrBranchIDRequired
+		return appErr.ErrBranchIDRequired
 	}
 
 	if strings.TrimSpace(branch.BranchName) == "" {
-		return ErrBranchNameRequired
+		return appErr.ErrBranchNameRequired
 	}
 
 	if !isValidBranchStatus(branch.Status) {
-		return ErrInvalidBranchStatus
+		return appErr.ErrInvalidBranchStatus
 	}
 
 	if strings.TrimSpace(branch.Timezone) == "" {
-		return ErrInvalidBranchTimezoneRequired
+		return appErr.ErrInvalidBranchTimezoneRequired
 	}
 
 	if strings.TrimSpace(branch.Currency) == "" {
-		return ErrInvalidBranchCurrencyRequired
+		return appErr.ErrInvalidBranchCurrencyRequired
 	}
 
 	if !CurrencyRegex.MatchString(branch.Currency) {
-		return ErrInvalidBranchCurrency 
+		return appErr.ErrInvalidBranchCurrency 
 	}
 
 	return nil
