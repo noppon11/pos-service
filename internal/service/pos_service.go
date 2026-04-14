@@ -2,43 +2,28 @@ package service
 
 import (
 	"context"
-	"errors"
+	"database/sql"
 
 	"pos-service/internal/domain"
+	appErr "pos-service/internal/errors"
 )
-
-var (
-	ErrDBNotConfigured         = errors.New("database is not configured")
-	ErrBranchRepoNotConfigured = errors.New("branch repository is not configured")
-	ErrValidatorNotConfigured  = errors.New("validator not configured")
-	ErrInvalidBranchStatus           = errors.New("status must be active or inactive")
-	ErrInvalidBranchCurrency         = errors.New("currency must be 3 uppercase letters")
-	ErrInvalidBranchCurrencyRequired = errors.New("currency is required")
-	ErrInvalidBranchTimezoneRequired = errors.New("timezone is required")
-	ErrBranchIDRequired              = errors.New("branch_id is required")
-	ErrBranchNameRequired            = errors.New("branch_name is required")
-)
-
-type DB interface {
-	PingContext(ctx context.Context) error
-}
 
 type BranchRepository interface {
 	ListByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
 	GetByTenantIDAndBranchID(ctx context.Context, tenantID string, branchID string) (*domain.BranchResponse, error)
 }
 
-type PosService struct {
-	db         DB
-	branchRepo BranchRepository
-	validator  Validator
-}
-
 type Validator interface {
 	BranchValidation(branch domain.BranchResponse) error
 }
 
-func NewPosService(db DB, branchRepo BranchRepository, v Validator) *PosService {
+type PosService struct {
+	db          *sql.DB
+	branchRepo BranchRepository
+	validator  Validator
+}
+
+func NewPosService(db  *sql.DB, branchRepo BranchRepository, v Validator) *PosService {
 	return &PosService{
 		db:         db,
 		branchRepo: branchRepo,
@@ -48,7 +33,7 @@ func NewPosService(db DB, branchRepo BranchRepository, v Validator) *PosService 
 
 func (s *PosService) GetHealth(ctx context.Context) error {
 	if s.db == nil {
-		return ErrDBNotConfigured
+		return appErr.ErrDBNotConfigured
 	}
 
 	return s.db.PingContext(ctx)
@@ -56,7 +41,7 @@ func (s *PosService) GetHealth(ctx context.Context) error {
 
 func (s *PosService) GetHealthByTenantID(ctx context.Context, tenantID string) error {
 	if s.db == nil {
-		return ErrDBNotConfigured
+		return appErr.ErrDBNotConfigured
 	}
 
 	return s.db.PingContext(ctx)
@@ -64,7 +49,7 @@ func (s *PosService) GetHealthByTenantID(ctx context.Context, tenantID string) e
 
 func (s *PosService) GetBranchesByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error) {
 	if s.branchRepo == nil {
-		return nil, ErrBranchRepoNotConfigured
+		return nil, appErr.ErrBranchRepoNotConfigured
 	}
 
 	branches, err := s.branchRepo.ListByTenantID(ctx, tenantID)
@@ -72,8 +57,8 @@ func (s *PosService) GetBranchesByTenantID(ctx context.Context, tenantID string)
 		return nil, err
 	}
 
-	for _, branch := range branches {
-		if err := s.validateBranch(branch); err != nil {
+	for i := range branches {
+		if err := s.validateBranch(branches[i]); err != nil {
 			return nil, err
 		}
 	}
@@ -83,7 +68,7 @@ func (s *PosService) GetBranchesByTenantID(ctx context.Context, tenantID string)
 
 func (s *PosService) GetBranchDetail(ctx context.Context, tenantID, branchID string) (*domain.BranchResponse, error) {
 	if s.branchRepo == nil {
-		return nil, ErrBranchRepoNotConfigured
+		return nil, appErr.ErrBranchRepoNotConfigured
 	}
 
 	branch, err := s.branchRepo.GetByTenantIDAndBranchID(ctx, tenantID, branchID)
@@ -99,9 +84,8 @@ func (s *PosService) GetBranchDetail(ctx context.Context, tenantID, branchID str
 }
 
 func (s *PosService) validateBranch(branch domain.BranchResponse) error {
-
 	if s.validator == nil {
-		return ErrValidatorNotConfigured
+		return appErr.ErrValidatorNotConfigured
 	}
 
 	return s.validator.BranchValidation(branch)

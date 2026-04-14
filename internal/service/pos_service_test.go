@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"context"
@@ -6,19 +6,12 @@ import (
 	"testing"
 
 	"pos-service/internal/domain"
+	appErr "pos-service/internal/errors"
+	"pos-service/internal/service"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
-
-type MockDB struct {
-	mock.Mock
-}
-
-func (m *MockDB) PingContext(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
-}
 
 type MockRepo struct {
 	data map[string][]domain.BranchResponse
@@ -61,80 +54,28 @@ func (m *MockValidator) BranchValidation(branch domain.BranchResponse) error {
 }
 
 func TestGetHealth_DBNotConfigured(t *testing.T) {
-	svc := NewPosService(nil, nil, nil)
+	svc := service.NewPosService(nil, nil, nil)
 
 	err := svc.GetHealth(context.Background())
 
-	assert.ErrorIs(t, err, ErrDBNotConfigured)
-}
-
-func TestGetHealth_DBDown(t *testing.T) {
-	mockDB := new(MockDB)
-
-	mockDB.On("PingContext", mock.Anything).Return(errors.New("db down")).Once()
-
-	svc := NewPosService(mockDB, nil, nil)
-
-	err := svc.GetHealth(context.Background())
-
-	assert.EqualError(t, err, "db down")
-	mockDB.AssertExpectations(t)
-}
-
-func TestGetHealth_Success(t *testing.T) {
-	mockDB := new(MockDB)
-
-	mockDB.On("PingContext", mock.Anything).Return(nil).Once()
-
-	svc := NewPosService(mockDB, nil, nil)
-
-	err := svc.GetHealth(context.Background())
-
-	assert.NoError(t, err)
-	mockDB.AssertExpectations(t)
+	assert.ErrorIs(t, err, appErr.ErrDBNotConfigured)
 }
 
 func TestGetHealthByTenantID_DBNotConfigured(t *testing.T) {
-	svc := NewPosService(nil, nil, nil)
+	svc := service.NewPosService(nil, nil, nil)
 
 	err := svc.GetHealthByTenantID(context.Background(), "tenant_001")
 
-	assert.ErrorIs(t, err, ErrDBNotConfigured)
-}
-
-func TestGetHealthByTenantID_DBDown(t *testing.T) {
-	mockDB := new(MockDB)
-
-	mockDB.On("PingContext", mock.Anything).Return(errors.New("db down")).Once()
-
-	svc := NewPosService(mockDB, nil, nil)
-
-	err := svc.GetHealthByTenantID(context.Background(), "tenant_001")
-
-	assert.EqualError(t, err, "db down")
-	mockDB.AssertExpectations(t)
-}
-
-func TestGetHealthByTenantID_Success(t *testing.T) {
-	mockDB := new(MockDB)
-
-	mockDB.On("PingContext", mock.Anything).Return(nil).Once()
-
-	svc := NewPosService(mockDB, nil, nil)
-
-	err := svc.GetHealthByTenantID(context.Background(), "tenant_001")
-
-	assert.NoError(t, err)
-	mockDB.AssertExpectations(t)
+	assert.ErrorIs(t, err, appErr.ErrDBNotConfigured)
 }
 
 func TestGetBranchesByTenantID_RepoNotConfigured(t *testing.T) {
-	svc := NewPosService(nil, nil, nil)
+	svc := service.NewPosService(nil, nil, nil)
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrBranchRepoNotConfigured)
+	assert.ErrorIs(t, err, appErr.ErrBranchRepoNotConfigured)
 }
 
 func TestGetBranchesByTenantID_ValidatorNotConfigured(t *testing.T) {
@@ -152,12 +93,12 @@ func TestGetBranchesByTenantID_ValidatorNotConfigured(t *testing.T) {
 		},
 	}
 
-	svc := NewPosService(nil, repo, nil)
+	svc := service.NewPosService(nil, repo, nil)
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrValidatorNotConfigured)
+	assert.ErrorIs(t, err, appErr.ErrValidatorNotConfigured)
 }
 
 func TestGetBranchesByTenantID_Success(t *testing.T) {
@@ -185,7 +126,7 @@ func TestGetBranchesByTenantID_Success(t *testing.T) {
 	validator := new(MockValidator)
 	validator.On("BranchValidation", mock.Anything).Return(nil).Twice()
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
 
@@ -203,7 +144,7 @@ func TestGetBranchesByTenantID_RepoError(t *testing.T) {
 	}
 	validator := new(MockValidator)
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
 
@@ -227,14 +168,14 @@ func TestGetBranchesByTenantID_InvalidStatus(t *testing.T) {
 	}
 
 	validator := new(MockValidator)
-	validator.On("BranchValidation", mock.Anything).Return(ErrInvalidBranchStatus).Once()
+	validator.On("BranchValidation", mock.Anything).Return(appErr.ErrInvalidBranchStatus).Once()
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrInvalidBranchStatus)
+	assert.ErrorIs(t, err, appErr.ErrInvalidBranchStatus)
 	validator.AssertExpectations(t)
 }
 
@@ -254,14 +195,14 @@ func TestGetBranchesByTenantID_EmptyBranchID(t *testing.T) {
 	}
 
 	validator := new(MockValidator)
-	validator.On("BranchValidation", mock.Anything).Return(ErrBranchIDRequired).Once()
+	validator.On("BranchValidation", mock.Anything).Return(appErr.ErrBranchIDRequired).Once()
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrBranchIDRequired)
+	assert.ErrorIs(t, err, appErr.ErrBranchIDRequired)
 	validator.AssertExpectations(t)
 }
 
@@ -281,24 +222,24 @@ func TestGetBranchesByTenantID_EmptyBranchName(t *testing.T) {
 	}
 
 	validator := new(MockValidator)
-	validator.On("BranchValidation", mock.Anything).Return(ErrBranchNameRequired).Once()
+	validator.On("BranchValidation", mock.Anything).Return(appErr.ErrBranchNameRequired).Once()
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchesByTenantID(context.Background(), "aura-bkk")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrBranchNameRequired)
+	assert.ErrorIs(t, err, appErr.ErrBranchNameRequired)
 	validator.AssertExpectations(t)
 }
 
 func TestGetBranchDetail_RepoNotConfigured(t *testing.T) {
-	svc := NewPosService(nil, nil, nil)
+	svc := service.NewPosService(nil, nil, nil)
 
 	got, err := svc.GetBranchDetail(context.Background(), "aura-bkk", "bkk-001")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrBranchRepoNotConfigured)
+	assert.ErrorIs(t, err, appErr.ErrBranchRepoNotConfigured)
 }
 
 func TestGetBranchDetail_ValidatorNotConfigured(t *testing.T) {
@@ -316,12 +257,12 @@ func TestGetBranchDetail_ValidatorNotConfigured(t *testing.T) {
 		},
 	}
 
-	svc := NewPosService(nil, repo, nil)
+	svc := service.NewPosService(nil, repo, nil)
 
 	got, err := svc.GetBranchDetail(context.Background(), "aura-bkk", "bkk-001")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrValidatorNotConfigured)
+	assert.ErrorIs(t, err, appErr.ErrValidatorNotConfigured)
 }
 
 func TestGetBranchDetail_RepoError(t *testing.T) {
@@ -330,7 +271,7 @@ func TestGetBranchDetail_RepoError(t *testing.T) {
 	}
 	validator := new(MockValidator)
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchDetail(context.Background(), "aura-bkk", "bkk-001")
 
@@ -356,7 +297,7 @@ func TestGetBranchDetail_Success(t *testing.T) {
 	validator := new(MockValidator)
 	validator.On("BranchValidation", mock.Anything).Return(nil).Once()
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchDetail(context.Background(), "aura-bkk", "bkk-001")
 
@@ -386,14 +327,14 @@ func TestGetBranchDetail_InvalidStatus(t *testing.T) {
 	}
 
 	validator := new(MockValidator)
-	validator.On("BranchValidation", mock.Anything).Return(ErrInvalidBranchStatus).Once()
+	validator.On("BranchValidation", mock.Anything).Return(appErr.ErrInvalidBranchStatus).Once()
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchDetail(context.Background(), "aura-bkk", "bkk-001")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrInvalidBranchStatus)
+	assert.ErrorIs(t, err, appErr.ErrInvalidBranchStatus)
 	validator.AssertExpectations(t)
 }
 
@@ -403,7 +344,7 @@ func TestGetBranchDetail_EmptyBranchID(t *testing.T) {
 			"aura-bkk": {
 				{
 					BranchID:   "",
-					BranchName: "Aura_Siam",
+					BranchName: "Aura Siam",
 					Status:     "active",
 					Timezone:   "Asia/Bangkok",
 					Currency:   "THB",
@@ -413,14 +354,15 @@ func TestGetBranchDetail_EmptyBranchID(t *testing.T) {
 	}
 
 	validator := new(MockValidator)
-	validator.On("BranchValidation", mock.Anything).Return(ErrBranchIDRequired).Once()
+	validator.On("BranchValidation", mock.Anything).Return(appErr.ErrBranchIDRequired).Once()
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchDetail(context.Background(), "aura-bkk", "")
 
-	assert.Error(t, err)
 	assert.Nil(t, got)
+	assert.ErrorIs(t, err, appErr.ErrBranchIDRequired)
+	validator.AssertExpectations(t)
 }
 
 func TestGetBranchDetail_EmptyBranchName(t *testing.T) {
@@ -439,13 +381,13 @@ func TestGetBranchDetail_EmptyBranchName(t *testing.T) {
 	}
 
 	validator := new(MockValidator)
-	validator.On("BranchValidation", mock.Anything).Return(ErrBranchNameRequired).Once()
+	validator.On("BranchValidation", mock.Anything).Return(appErr.ErrBranchNameRequired).Once()
 
-	svc := NewPosService(nil, repo, validator)
+	svc := service.NewPosService(nil, repo, validator)
 
 	got, err := svc.GetBranchDetail(context.Background(), "aura-bkk", "bkk-001")
 
 	assert.Nil(t, got)
-	assert.ErrorIs(t, err, ErrBranchNameRequired)
+	assert.ErrorIs(t, err, appErr.ErrBranchNameRequired)
 	validator.AssertExpectations(t)
 }

@@ -236,8 +236,20 @@ func TestGetBranchesByTenantID_Success(t *testing.T) {
 
 	tenantID := "aura-bkk"
 	branches := []domain.BranchResponse{
-		{BranchID: "bkk-001", BranchName: "Aura Siam", Status: "active"},
-		{BranchID: "bkk-002", BranchName: "Aura Ari", Status: "inactive"},
+		{
+			BranchID:   "bkk-001",
+			BranchName: "Aura Siam",
+			Status:     "active",
+			Timezone:   "Asia/Bangkok",
+			Currency:   "THB",
+		},
+		{
+			BranchID:   "bkk-002",
+			BranchName: "Aura Ari",
+			Status:     "inactive",
+			Timezone:   "Asia/Bangkok",
+			Currency:   "THB",
+		},
 	}
 
 	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
@@ -260,6 +272,8 @@ func TestGetBranchesByTenantID_Success(t *testing.T) {
 	assert.Equal(t, "bkk-001", resp.Data[0].BranchID)
 	assert.Equal(t, "Aura Siam", resp.Data[0].BranchName)
 	assert.Equal(t, "active", resp.Data[0].Status)
+	assert.Equal(t, "Asia/Bangkok", resp.Data[0].Timezone)
+	assert.Equal(t, "THB", resp.Data[0].Currency)
 
 	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)

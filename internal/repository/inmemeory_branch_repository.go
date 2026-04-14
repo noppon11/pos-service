@@ -4,12 +4,7 @@ import (
 	"context"
 
 	"pos-service/internal/domain"
-	"errors"
-)
-
-var (
-    ErrTenantNotFound = errors.New("tenant not found")
-    ErrBranchNotFound = errors.New("branch not found")
+	appErr "pos-service/internal/errors"
 )
 
 type InMemoryBranchRepository struct {
@@ -24,11 +19,15 @@ func NewInMemoryBranchRepository() *InMemoryBranchRepository {
 					BranchID:   "bkk-001",
 					BranchName: "Aura Siam",
 					Status:     "active",
+					Timezone:   "Asia/Bangkok",
+					Currency:   "THB",    
 				},
 				{
 					BranchID:   "bkk-002",
 					BranchName: "Aura Ari",
 					Status:     "inactive",
+					Timezone:   "Asia/Bangkok",
+					Currency:   "THB",    
 				},
 			},
 			"aura-cnx": {
@@ -36,6 +35,8 @@ func NewInMemoryBranchRepository() *InMemoryBranchRepository {
 					BranchID:   "cnx-001",
 					BranchName: "Aura Chiang Mai",
 					Status:     "active",
+					Timezone:   "Asia/Chaing Mai",
+					Currency:   "THB",    
 				},
 			},
 		},
@@ -53,7 +54,7 @@ func (r *InMemoryBranchRepository) ListByTenantID(ctx context.Context, tenantID 
 func (r *InMemoryBranchRepository) GetByTenantIDAndBranchID(ctx context.Context, tenantID, branchID string) (*domain.BranchResponse, error) {
 	branches, ok := r.data[tenantID]
 	if !ok {
-		return nil, ErrTenantNotFound
+		return nil, appErr.ErrTenantNotFound
 	}
 
 	for i := range branches {
@@ -62,5 +63,5 @@ func (r *InMemoryBranchRepository) GetByTenantIDAndBranchID(ctx context.Context,
 		}
 	}
 
-	return nil, ErrBranchNotFound
+	return nil, appErr.ErrBranchNotFound
 }

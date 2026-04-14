@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"pos-service/internal/dto"
 	"pos-service/internal/domain"
 	"time"
 
@@ -93,18 +94,17 @@ func (h *PosHandler) GetBranchesByTenantID(c *gin.Context) {
 		return
 	}
 
-	data, err := h.posService.GetBranchesByTenantID(ctx, tenantID)
+	branches, err := h.posService.GetBranchesByTenantID(ctx, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
-		return
+		return // 🔥 สำคัญมาก
 	}
 
-	c.JSON(http.StatusOK, domain.ListBranchesResponse{
-		TenantID: tenantID,
-		Data:     data,
-	})
+	resp := dto.ToListBranchesResponseDTO(tenantID, branches)
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *PosHandler) getValidTenantID(c *gin.Context) (string, bool) {
@@ -171,5 +171,20 @@ func (h *PosHandler) GetByTenantIDAndBranchID(c *gin.Context){
 		Status: data.Status,
 		Timezone: data.Timezone,
 		Currency: data.Currency,
+	})
+}
+
+func (h *PosHandler) Readiness(c *gin.Context) {
+	err := h.posService.GetHealth(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status": "not_ready",
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "ready",
 	})
 }
