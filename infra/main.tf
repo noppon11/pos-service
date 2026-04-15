@@ -36,21 +36,34 @@ resource "null_resource" "example" {
   }
 }
 
-# ลบ github_repository_ruleset ออก แล้วใช้อันนี้แทน
-resource "github_branch_protection" "main" {
-  repository_id = "pos-service"
-  pattern       = "main"
+resource "github_repository_ruleset" "main_require_tests" {
+  name        = "require-tests-before-merge"
+  repository  = "pos-service"
+  target      = "branch"
+  enforcement = "active"
 
-  required_status_checks {
-    strict   = true
-    contexts = ["go-test"]
+  conditions {
+    ref_name {
+      include = ["~DEFAULT_BRANCH"]
+      exclude = []
+    }
   }
 
-  required_pull_request_reviews {
-    required_approving_review_count = 1
-    dismiss_stale_reviews           = true
-    require_last_push_approval      = false
-  }
+  rules {
+    pull_request {
+      dismiss_stale_reviews_on_push     = false
+      require_code_owner_review         = false
+      require_last_push_approval        = false
+      required_approving_review_count   = 1
+      required_review_thread_resolution = true
+    }
 
-  enforce_admins = false
+    required_status_checks {
+      strict_required_status_checks_policy = true
+
+      required_check {
+        context = "go-test"
+      }
+    }
+  }
 }
