@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"pos-service/internal/database"
 	"pos-service/internal/handler"
 	"pos-service/internal/repository"
 	"pos-service/internal/routes"
@@ -14,8 +15,8 @@ import (
 	"pos-service/internal/validator"
 
 	"github.com/gin-gonic/gin"
-	_ "github.com/lib/pq"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -33,6 +34,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to open db: %v", err)
 	}
+
+	database.Migrate(db)
+	database.Seed(db)
 	defer func() {
 		if err := db.Close(); err != nil {
 			log.Printf("failed to close db: %v", err)
@@ -55,9 +59,16 @@ func main() {
 
 	posValidator := &validator.PosValidator{}
 	branchRepo := repository.NewPostgresBranchRepository(db)
-	posService := service.NewPosService(db, branchRepo, posValidator)
-	posHandler := handler.NewPosHandler(posService, posValidator)
+	productRepo := repository.NewPostgresProductRepository(db)
 
+	posService := service.NewPosService(
+		db,
+		branchRepo,
+		productRepo,
+		posValidator,
+	)
+
+	posHandler := handler.NewPosHandler(posService, posValidator)
 	r := gin.Default()
 	routes.SetupRoutes(r, posHandler)
 

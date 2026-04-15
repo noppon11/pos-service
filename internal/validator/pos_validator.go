@@ -14,10 +14,15 @@ type PosValidator struct{}
 type TenantValidator interface {
 	TenantIDValidation(tenantID string) error
 	BranchIDValidation(branchID string) error
+	ProductIDValidation(productID string) error
 }
 
 type BranchValidator interface {
-	BranchValidation(branch domain.BranchResponse) error
+	ValidateBranch(branch domain.BranchResponse) error
+}
+
+type ProductValidator interface {
+	ValidateProduct(product domain.ProductResponse) error
 }
 
 var (
@@ -49,7 +54,19 @@ func (v *PosValidator) BranchIDValidation(branchID string) error {
 	return nil
 }
 
-func (v *PosValidator) BranchValidation(branch domain.BranchResponse) error {
+func (v *PosValidator) ProductIDValidation(productID string) error {
+	if strings.TrimSpace(productID) == "" {
+		return errors.New("product_id is required")
+	}
+
+	if !IDRegex.MatchString(productID) {
+		return errors.New("product_id must be 3-50 chars, lowercase letters, numbers, underscore or dash only")
+	}
+
+	return nil
+}
+
+func (v *PosValidator) ValidateBranch(branch domain.BranchResponse) error {
 	if strings.TrimSpace(branch.BranchID) == "" {
 		return appErr.ErrBranchIDRequired
 	}
@@ -71,7 +88,31 @@ func (v *PosValidator) BranchValidation(branch domain.BranchResponse) error {
 	}
 
 	if !CurrencyRegex.MatchString(branch.Currency) {
-		return appErr.ErrInvalidBranchCurrency 
+		return appErr.ErrInvalidBranchCurrency
+	}
+
+	return nil
+}
+
+func (v *PosValidator) ValidateProduct(product domain.ProductResponse) error {
+	if strings.TrimSpace(product.Name) == "" {
+		return appErr.ErrProductNameRequired
+	}
+
+	if strings.TrimSpace(product.SKU) == "" {
+		return appErr.ErrProductSKURequired
+	}
+
+	if product.Price < 0 {
+		return appErr.ErrInvalidProductPrice
+	}
+
+	if strings.TrimSpace(product.CategoryID) == "" {
+		return appErr.ErrCategoryIDRequired
+	}
+
+	if strings.TrimSpace(product.Unit) == "" {
+		return appErr.ErrUnitRequired
 	}
 
 	return nil
