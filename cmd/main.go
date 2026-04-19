@@ -12,6 +12,7 @@ import (
 	"pos-service/internal/repository"
 	"pos-service/internal/routes"
 	"pos-service/internal/service"
+	"pos-service/internal/utils"
 	"pos-service/internal/validator"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,7 @@ func main() {
 
 	database.Migrate(db)
 	database.Seed(db)
+
 	defer func() {
 		if err := db.Close(); err != nil {
 			log.Printf("failed to close db: %v", err)
@@ -58,8 +60,10 @@ func main() {
 	log.Println("database connected")
 
 	posValidator := &validator.PosValidator{}
+
 	branchRepo := repository.NewPostgresBranchRepository(db)
 	productRepo := repository.NewPostgresProductRepository(db)
+	userRepo := repository.NewPostgresUserRepository(db)
 
 	posService := service.NewPosService(
 		db,
@@ -68,9 +72,27 @@ func main() {
 		posValidator,
 	)
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is required")
+	}
+
+	jwtManager := utils.NewJWTManager(jwtSecret, time.Hour)
+
+	authService := service.NewAuthService(userRepo, jwtManager)
+
 	posHandler := handler.NewPosHandler(posService, posValidator)
+	authHandler := handler.NewAuthHandler(authService)
+
 	r := gin.Default()
-	routes.SetupRoutes(r, posHandler)
+
+	routes.SetupRoutes(
+		r,
+		posHandler,
+		authHandler,
+		authService,
+		jwtManager,
+	)
 
 	port := os.Getenv("PORT")
 	if port == "" {

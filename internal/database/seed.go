@@ -24,6 +24,42 @@ func Seed(db *sql.DB) {
 			('prod-003', 'aura-bkk', 'bkk-002', 'Laser Acne', 'LAS-ACNE', 2500, 'treatment', 'session', false)
 		ON CONFLICT (tenant_id, branch_id, product_id) DO NOTHING;
 		`,
+		`
+		INSERT INTO users (
+			id, email, password_hash, full_name, tenant_id, role, is_active
+		)
+		VALUES (
+			'usr_001',
+			'staff@aura.com',
+			'$2a$10$wQmWm3P7QJ3k7KXq5v6jAeg7lP4b4vA0kYYmK6k0iK0c6xWQnQG2K',
+			'Aura Staff',
+			'aura-bkk',
+			'staff',
+			TRUE
+		)
+		ON CONFLICT (id) DO NOTHING;
+		`,
+		`
+		INSERT INTO user_branch_access (user_id, branch_id)
+		VALUES ('usr_001', 'bkk-001')
+		ON CONFLICT (user_id, branch_id) DO NOTHING;
+		`,
+		`
+		INSERT INTO users (
+			id, email, password_hash, full_name, tenant_id, role, is_active
+		)
+		VALUES (
+			'usr_001',
+			'staff@aura.com',
+			'$2a$10$.N9oLtfq49Jct2IZanv7n.9r7jL8GvyvQ9Pf4g59VFf/SbYTH1E/K',
+			'Aura Staff',
+			'aura-bkk',
+			'staff',
+			TRUE
+		)
+		ON CONFLICT (id) DO UPDATE SET
+			password_hash = EXCLUDED.password_hash;
+		`,
 	}
 
 	tx, err := db.Begin()
