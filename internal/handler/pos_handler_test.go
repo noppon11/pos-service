@@ -12,6 +12,9 @@ import (
 
 	"pos-service/internal/domain"
 	"pos-service/internal/dto"
+	appErr "pos-service/internal/errors"
+	"pos-service/internal/repository"
+	"pos-service/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -54,45 +57,50 @@ func (m *MockPosService) GetBranchDetail(ctx context.Context, tenantID, branchID
 	return data, args.Error(1)
 }
 
-func (m *MockPosService) GetProducts(ctx context.Context, tenantID, branchID string) ([]domain.ProductResponse, error) {
-	args := m.Called(ctx, tenantID, branchID)
+func (m *MockPosService) GetProducts(
+	ctx context.Context,
+	tenantID string,
+	branchID string,
+	filter repository.ProductListFilter,
+) (*service.ProductListResult, error) {
+	args := m.Called(ctx, tenantID, branchID, filter)
 
-	var data []domain.ProductResponse
+	var result *service.ProductListResult
 	if v := args.Get(0); v != nil {
-		data = v.([]domain.ProductResponse)
+		result = v.(*service.ProductListResult)
 	}
 
-	return data, args.Error(1)
+	return result, args.Error(1)
 }
 
-func (m *MockPosService) GetProductByID(ctx context.Context, tenantID, branchID, productID string) (*domain.ProductResponse, error) {
+func (m *MockPosService) GetProductByID(ctx context.Context, tenantID, branchID, productID string) (*domain.Product, error) {
 	args := m.Called(ctx, tenantID, branchID, productID)
 
-	var data *domain.ProductResponse
+	var data *domain.Product
 	if v := args.Get(0); v != nil {
-		data = v.(*domain.ProductResponse)
+		data = v.(*domain.Product)
 	}
 
 	return data, args.Error(1)
 }
 
-func (m *MockPosService) CreateNewProduct(ctx context.Context, tenantID, branchID string, req dto.CreateProductRequest) (*domain.ProductResponse, error) {
+func (m *MockPosService) CreateNewProduct(ctx context.Context, tenantID, branchID string, req dto.CreateProductRequest) (*domain.Product, error) {
 	args := m.Called(ctx, tenantID, branchID, req)
 
-	var data *domain.ProductResponse
+	var data *domain.Product
 	if v := args.Get(0); v != nil {
-		data = v.(*domain.ProductResponse)
+		data = v.(*domain.Product)
 	}
 
 	return data, args.Error(1)
 }
 
-func (m *MockPosService) UpdateProduct(ctx context.Context, tenantID, branchID, productID string, req dto.UpdateProductRequest) (*domain.ProductResponse, error) {
+func (m *MockPosService) UpdateProduct(ctx context.Context, tenantID, branchID, productID string, req dto.UpdateProductRequest) (*domain.Product, error) {
 	args := m.Called(ctx, tenantID, branchID, productID, req)
 
-	var data *domain.ProductResponse
+	var data *domain.Product
 	if v := args.Get(0); v != nil {
-		data = v.(*domain.ProductResponse)
+		data = v.(*domain.Product)
 	}
 
 	return data, args.Error(1)
@@ -300,25 +308,44 @@ func TestGetAllProducts_Success(t *testing.T) {
 	tenantID := "aura-bkk"
 	branchID := "bkk-001"
 
-	products := []domain.ProductResponse{
-		{
-			ProductID:  "prod-001",
-			Name:       "Botox 50u",
-			SKU:        "BOT-50",
-			Price:      3500,
-			CategoryID: "treatment",
-			Unit:       "unit",
-			IsActive:   true,
-		},
-	}
-
 	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
 	mockValidator.On("BranchIDValidation", branchID).Return(nil).Once()
-	mockService.On("GetProducts", mock.Anything, tenantID, branchID).Return(products, nil).Once()
+
+	filter := repository.ProductListFilter{
+		Page:       0,
+		Limit:      0,
+		CategoryID: "",
+	}
+
+	result := &service.ProductListResult{
+		Items: []domain.Product{
+			{
+				ProductID:  "prod-001",
+				Name:       "Botox 50u",
+				SKU:        "BOT-50",
+				Price:      3500,
+				CategoryID: "treatment",
+				Unit:       "unit",
+				IsActive:   true,
+			},
+		},
+		Total: 1,
+		Page:  1,
+		Limit: 20,
+	}
+
+	mockService.
+		On("GetProducts", mock.Anything, tenantID, branchID, filter).
+		Return(result, nil).
+		Once()
 
 	h := NewPosHandler(mockService, mockValidator)
 
-	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/branches/"+branchID+"/products", nil)
+	c, w := setupGinContext(
+		http.MethodGet,
+		"/api/v1/tenants/"+tenantID+"/branches/"+branchID+"/products",
+		nil,
+	)
 	c.Params = gin.Params{
 		{Key: "tenant_id", Value: tenantID},
 		{Key: "branch_id", Value: branchID},
@@ -327,13 +354,6 @@ func TestGetAllProducts_Success(t *testing.T) {
 	h.GetAllProducts(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-
-	var resp []domain.ProductResponse
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.NoError(t, err)
-	assert.Len(t, resp, 1)
-	assert.Equal(t, "prod-001", resp[0].ProductID)
-
 	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
 }
@@ -346,7 +366,7 @@ func TestGetProductByID_Success(t *testing.T) {
 	branchID := "bkk-001"
 	productID := "prod-001"
 
-	product := &domain.ProductResponse{
+	product := &domain.Product{
 		ProductID:  productID,
 		Name:       "Botox 50u",
 		SKU:        "BOT-50",
@@ -363,7 +383,11 @@ func TestGetProductByID_Success(t *testing.T) {
 
 	h := NewPosHandler(mockService, mockValidator)
 
-	c, w := setupGinContext(http.MethodGet, "/api/v1/tenants/"+tenantID+"/branches/"+branchID+"/products/"+productID, nil)
+	c, w := setupGinContext(
+		http.MethodGet,
+		"/api/v1/tenants/"+tenantID+"/branches/"+branchID+"/products/"+productID,
+		nil,
+	)
 	c.Params = gin.Params{
 		{Key: "tenant_id", Value: tenantID},
 		{Key: "branch_id", Value: branchID},
@@ -374,10 +398,12 @@ func TestGetProductByID_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp domain.ProductResponse
+	var resp dto.ProductResponse
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
 	assert.Equal(t, productID, resp.ProductID)
+	assert.Equal(t, "Botox 50u", resp.Name)
+	assert.Equal(t, "BOT-50", resp.SKU)
 
 	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
@@ -399,7 +425,7 @@ func TestCreateProduct_Success(t *testing.T) {
 		IsActive:   true,
 	}
 
-	created := &domain.ProductResponse{
+	created := &domain.Product{
 		ProductID:  "prod-001",
 		Name:       req.Name,
 		SKU:        req.SKU,
@@ -426,11 +452,13 @@ func TestCreateProduct_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
-	var resp domain.ProductResponse
+	var resp dto.ProductResponse
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
 	assert.Equal(t, "prod-001", resp.ProductID)
 	assert.Equal(t, "Botox 100u", resp.Name)
+	assert.Equal(t, "BOT-100", resp.SKU)
+	assert.Equal(t, 6500.0, resp.Price)
 
 	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)
@@ -472,7 +500,6 @@ func TestUpdateProduct_Success(t *testing.T) {
 	productID := "86a915ed-d62f-4d91-bba4-372f55b4bbd4"
 
 	req := dto.UpdateProductRequest{
-		ProductID:  "86a915ed-d62f-4d91-bba4-372f55b4bbd4",
 		Name:       "Botox 120u",
 		SKU:        "BOT-120",
 		Price:      7500,
@@ -481,7 +508,7 @@ func TestUpdateProduct_Success(t *testing.T) {
 		IsActive:   true,
 	}
 
-	updated := &domain.ProductResponse{
+	updated := &domain.Product{
 		ProductID:  productID,
 		Name:       req.Name,
 		SKU:        req.SKU,
@@ -510,7 +537,7 @@ func TestUpdateProduct_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
-	var resp domain.ProductResponse
+	var resp dto.ProductResponse
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
 	assert.Equal(t, productID, resp.ProductID)
@@ -550,10 +577,10 @@ func TestDeleteProduct_Success(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
-func TestToProductResponse_IncludeDeletedAt(t *testing.T) {
+func TestToProduct_IncludeDeletedAt(t *testing.T) {
 	now := time.Now()
 
-	input := &domain.ProductResponse{
+	input := &domain.Product{
 		ProductID:  "prod-001",
 		Name:       "Botox 50u",
 		SKU:        "BOT-50",
@@ -564,7 +591,7 @@ func TestToProductResponse_IncludeDeletedAt(t *testing.T) {
 		DeletedAt:  &now,
 	}
 
-	out := toProductResponse(input)
+	out := dto.ToProductResponsePtr(input)
 	assert.NotNil(t, out)
 	assert.Equal(t, "prod-001", out.ProductID)
 	assert.NotNil(t, out.DeletedAt)
@@ -611,8 +638,17 @@ func TestGetAllProducts_InternalError(t *testing.T) {
 
 	mockValidator.On("BranchIDValidation", branchID).Return(nil).Once()
 	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
-	mockService.On("GetProducts", mock.Anything, tenantID, branchID).
-		Return(nil, errors.New("repository error")).Once()
+
+	filter := repository.ProductListFilter{
+		Page:       0,
+		Limit:      0,
+		CategoryID: "",
+	}
+
+	mockService.
+		On("GetProducts", mock.Anything, tenantID, branchID, filter).
+		Return(nil, errors.New("repository error")).
+		Once()
 
 	h := NewPosHandler(mockService, mockValidator)
 
@@ -788,7 +824,6 @@ func TestUpdateProduct_InternalError(t *testing.T) {
 	productID := "86a915ed-d62f-4d91-bba4-372f55b4bbd4"
 
 	req := dto.UpdateProductRequest{
-		ProductID:  productID,
 		Name:       "Botox 120u",
 		SKU:        "BOT-120",
 		Price:      7500,
@@ -970,4 +1005,137 @@ func TestGetAllProducts_InvalidTenantID(t *testing.T) {
 
 	mockValidator.AssertExpectations(t)
 	mockService.AssertNotCalled(t, "GetProducts", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestGetAllProducts_Success_WithPaginationAndCategoryFilter(t *testing.T) {
+	mockService := new(MockPosService)
+	mockValidator := new(MockValidator)
+
+	tenantID := "aura-bkk"
+	branchID := "bkk-001"
+
+	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
+	mockValidator.On("BranchIDValidation", branchID).Return(nil).Once()
+
+	filter := repository.ProductListFilter{
+		Page:       2,
+		Limit:      10,
+		CategoryID: "treatment",
+	}
+
+	result := &service.ProductListResult{
+		Items: []domain.Product{
+			{
+				ProductID:  "prod-001",
+				Name:       "Botox 100u",
+				SKU:        "BOT-100",
+				Price:      6500,
+				CategoryID: "treatment",
+				Unit:       "unit",
+				IsActive:   true,
+			},
+		},
+		Total: 21,
+		Page:  2,
+		Limit: 10,
+	}
+
+	mockService.
+		On("GetProducts", mock.Anything, tenantID, branchID, filter).
+		Return(result, nil).
+		Once()
+
+	h := NewPosHandler(mockService, mockValidator)
+
+	c, w := setupGinContext(
+		http.MethodGet,
+		"/api/v1/tenants/"+tenantID+"/branches/"+branchID+"/products?page=2&limit=10&category_id=treatment",
+		nil,
+	)
+	c.Params = gin.Params{
+		{Key: "tenant_id", Value: tenantID},
+		{Key: "branch_id", Value: branchID},
+	}
+
+	h.GetAllProducts(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockValidator.AssertExpectations(t)
+	mockService.AssertExpectations(t)
+}
+
+func TestCreateProduct_DuplicateSKU_ReturnsConflict(t *testing.T) {
+	mockService := new(MockPosService)
+	mockValidator := new(MockValidator)
+
+	tenantID := "aura-bkk"
+	branchID := "bkk-001"
+
+	req := dto.CreateProductRequest{
+		Name:       "Botox 100u",
+		SKU:        "BOT-100",
+		Price:      6500,
+		CategoryID: "treatment",
+		Unit:       "unit",
+		IsActive:   true,
+	}
+
+	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
+	mockValidator.On("BranchIDValidation", branchID).Return(nil).Once()
+
+	mockService.
+		On("CreateNewProduct", mock.Anything, tenantID, branchID, req).
+		Return(nil, appErr.ErrProductAlreadyExists).
+		Once()
+
+	h := NewPosHandler(mockService, mockValidator)
+
+	body, _ := json.Marshal(req)
+	c, w := setupGinContext(http.MethodPost, "/api/v1/tenants/"+tenantID+"/branches/"+branchID+"/products", body)
+	c.Params = gin.Params{
+		{Key: "tenant_id", Value: tenantID},
+		{Key: "branch_id", Value: branchID},
+	}
+
+	h.CreateProduct(c)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestCreateProduct_BranchNotFound_ReturnsNotFound(t *testing.T) {
+	mockService := new(MockPosService)
+	mockValidator := new(MockValidator)
+
+	tenantID := "aura-bkk"
+	branchID := "bkk-999"
+
+	req := dto.CreateProductRequest{
+		Name:       "Botox 100u",
+		SKU:        "BOT-100",
+		Price:      6500,
+		CategoryID: "treatment",
+		Unit:       "unit",
+		IsActive:   true,
+	}
+
+	mockValidator.On("TenantIDValidation", tenantID).Return(nil).Once()
+	mockValidator.On("BranchIDValidation", branchID).Return(nil).Once()
+
+	mockService.
+		On("CreateNewProduct", mock.Anything, tenantID, branchID, req).
+		Return(nil, appErr.ErrBranchNotFound).
+		Once()
+
+	h := NewPosHandler(mockService, mockValidator)
+
+	body, _ := json.Marshal(req)
+	c, w := setupGinContext(http.MethodPost, "/api/v1/tenants/"+tenantID+"/branches/"+branchID+"/products", body)
+	c.Params = gin.Params{
+		{Key: "tenant_id", Value: tenantID},
+		{Key: "branch_id", Value: branchID},
+	}
+
+	h.CreateProduct(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

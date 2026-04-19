@@ -2,10 +2,15 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
-	"pos-service/internal/dto"
-	"pos-service/internal/domain"
 	"time"
+
+	"pos-service/internal/domain"
+	"pos-service/internal/dto"
+	appErr "pos-service/internal/errors"
+	"pos-service/internal/repository"
+	"pos-service/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,10 +34,16 @@ type PosService interface {
 	GetBranchDetail(ctx context.Context, tenantID string, branchID string) (*domain.BranchResponse, error)
 	GetBranchesByTenantID(ctx context.Context, tenantID string) ([]domain.BranchResponse, error)
 
-	GetProducts(ctx context.Context, tenantID string, branchID string) ([]domain.ProductResponse, error)
-	GetProductByID(ctx context.Context, tenantID string, branchID string, productID string) (*domain.ProductResponse, error)
-	CreateNewProduct(ctx context.Context, tenantID string, branchID string, req dto.CreateProductRequest) (*domain.ProductResponse, error)
-	UpdateProduct(ctx context.Context, tenantID string, branchID string, productID string, req dto.UpdateProductRequest) (*domain.ProductResponse, error)
+	GetProducts(
+		ctx context.Context,
+		tenantID string,
+		branchID string,
+		filter repository.ProductListFilter,
+	) (*service.ProductListResult, error)
+
+	GetProductByID(ctx context.Context, tenantID string, branchID string, productID string) (*domain.Product, error)
+	CreateNewProduct(ctx context.Context, tenantID string, branchID string, req dto.CreateProductRequest) (*domain.Product, error)
+	UpdateProduct(ctx context.Context, tenantID string, branchID string, productID string, req dto.UpdateProductRequest) (*domain.Product, error)
 	DeleteProduct(ctx context.Context, tenantID string, branchID string, productID string) error
 }
 
@@ -47,33 +58,30 @@ func (h *PosHandler) newTimeoutContext(c *gin.Context) (context.Context, context
 	return context.WithTimeout(c.Request.Context(), requestTimeout)
 }
 
-func (h *PosHandler) respondError(c *gin.Context, status int, err error) {
-	c.JSON(status, gin.H{
-		"error": err.Error(),
-	})
+func (h *PosHandler) respondAppError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, appErr.ErrProductAlreadyExists):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, appErr.ErrProductNotFound), errors.Is(err, appErr.ErrBranchNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, appErr.ErrTenantIDRequired),
+		errors.Is(err, appErr.ErrBranchIDRequired),
+		errors.Is(err, appErr.ErrProductIDRequired),
+		errors.Is(err, appErr.ErrProductNameRequired),
+		errors.Is(err, appErr.ErrProductSKURequired),
+		errors.Is(err, appErr.ErrInvalidProductPrice),
+		errors.Is(err, appErr.ErrCategoryIDRequired),
+		errors.Is(err, appErr.ErrUnitRequired):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }
 
 func (h *PosHandler) respondValidationError(c *gin.Context, message string) {
 	c.JSON(http.StatusBadRequest, gin.H{
 		"error": message,
 	})
-}
-
-func toProductResponse(data *domain.ProductResponse) *domain.ProductResponse {
-	if data == nil {
-		return nil
-	}
-
-	return &domain.ProductResponse{
-		ProductID:  data.ProductID,
-		Name:       data.Name,
-		SKU:        data.SKU,
-		Price:      data.Price,
-		CategoryID: data.CategoryID,
-		Unit:       data.Unit,
-		IsActive:   data.IsActive,
-		DeletedAt:   data.DeletedAt,
-	}
 }
 
 func (h *PosHandler) GetHealth(c *gin.Context) {
@@ -136,7 +144,7 @@ func (h *PosHandler) GetBranchesByTenantID(c *gin.Context) {
 
 	branches, err := h.posService.GetBranchesByTenantID(ctx, tenantID)
 	if err != nil {
-		h.respondError(c, http.StatusInternalServerError, err)
+		h.respondAppError(c, err)
 		return
 	}
 
@@ -155,7 +163,7 @@ func (h *PosHandler) GetByTenantIDAndBranchID(c *gin.Context) {
 
 	data, err := h.posService.GetBranchDetail(ctx, tenantID, branchID)
 	if err != nil {
-		h.respondError(c, http.StatusInternalServerError, err)
+		h.respondAppError(c, err)
 		return
 	}
 
@@ -171,13 +179,25 @@ func (h *PosHandler) GetAllProducts(c *gin.Context) {
 		return
 	}
 
-	data, err := h.posService.GetProducts(ctx, tenantID, branchID)
-	if err != nil {
-		h.respondError(c, http.StatusInternalServerError, err)
+	var q dto.ListProductsQuery
+	if err := c.ShouldBindQuery(&q); err != nil {
+		h.respondValidationError(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, data)
+	filter := repository.ProductListFilter{
+		Page:       q.Page,
+		Limit:      q.Limit,
+		CategoryID: q.CategoryID,
+	}
+
+	data, err := h.posService.GetProducts(ctx, tenantID, branchID, filter)
+	if err != nil {
+		h.respondAppError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.ToListProductsResponse(data.Items, data.Page, data.Limit, data.Total))
 }
 
 func (h *PosHandler) GetProductByID(c *gin.Context) {
@@ -191,11 +211,11 @@ func (h *PosHandler) GetProductByID(c *gin.Context) {
 
 	data, err := h.posService.GetProductByID(ctx, tenantID, branchID, productID)
 	if err != nil {
-		h.respondError(c, http.StatusInternalServerError, err)
+		h.respondAppError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, toProductResponse(data))
+	c.JSON(http.StatusOK, dto.ToProductResponsePtr(data))
 }
 
 func (h *PosHandler) CreateProduct(c *gin.Context) {
@@ -215,11 +235,11 @@ func (h *PosHandler) CreateProduct(c *gin.Context) {
 
 	data, err := h.posService.CreateNewProduct(ctx, tenantID, branchID, req)
 	if err != nil {
-		h.respondError(c, http.StatusInternalServerError, err)
+		h.respondAppError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusCreated, toProductResponse(data))
+	c.JSON(http.StatusCreated, dto.ToProductResponsePtr(data))
 }
 
 func (h *PosHandler) UpdateProduct(c *gin.Context) {
@@ -239,11 +259,11 @@ func (h *PosHandler) UpdateProduct(c *gin.Context) {
 
 	data, err := h.posService.UpdateProduct(ctx, tenantID, branchID, productID, req)
 	if err != nil {
-		h.respondError(c, http.StatusInternalServerError, err)
+		h.respondAppError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, toProductResponse(data))
+	c.JSON(http.StatusOK, dto.ToProductResponsePtr(data))
 }
 
 func (h *PosHandler) DeleteProduct(c *gin.Context) {
@@ -256,14 +276,11 @@ func (h *PosHandler) DeleteProduct(c *gin.Context) {
 	}
 
 	if err := h.posService.DeleteProduct(ctx, tenantID, branchID, productID); err != nil {
-		h.respondError(c, http.StatusInternalServerError, err)
+		h.respondAppError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":    "product deleted",
-		"product_id": productID,
-	})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *PosHandler) getTenantAndBranchID(c *gin.Context) (string, string, bool) {
@@ -271,12 +288,10 @@ func (h *PosHandler) getTenantAndBranchID(c *gin.Context) (string, string, bool)
 	if !ok {
 		return "", "", false
 	}
-
 	branchID, ok := h.getValidBranchID(c)
 	if !ok {
 		return "", "", false
 	}
-
 	return tenantID, branchID, true
 }
 
@@ -285,12 +300,10 @@ func (h *PosHandler) getTenantBranchAndProductID(c *gin.Context) (string, string
 	if !ok {
 		return "", "", "", false
 	}
-
 	productID, ok := h.getValidProductID(c)
 	if !ok {
 		return "", "", "", false
 	}
-
 	return tenantID, branchID, productID, true
 }
 
@@ -300,12 +313,10 @@ func (h *PosHandler) getValidTenantID(c *gin.Context) (string, bool) {
 		h.respondValidationError(c, "tenant_id is required")
 		return "", false
 	}
-
 	if err := h.validator.TenantIDValidation(tenantID); err != nil {
 		h.respondValidationError(c, err.Error())
 		return "", false
 	}
-
 	return tenantID, true
 }
 
@@ -315,12 +326,10 @@ func (h *PosHandler) getValidBranchID(c *gin.Context) (string, bool) {
 		h.respondValidationError(c, "branch_id is required")
 		return "", false
 	}
-
 	if err := h.validator.BranchIDValidation(branchID); err != nil {
 		h.respondValidationError(c, err.Error())
 		return "", false
 	}
-
 	return branchID, true
 }
 
@@ -330,12 +339,10 @@ func (h *PosHandler) getValidProductID(c *gin.Context) (string, bool) {
 		h.respondValidationError(c, "product_id is required")
 		return "", false
 	}
-
 	if err := h.validator.ProductIDValidation(productID); err != nil {
 		h.respondValidationError(c, err.Error())
 		return "", false
 	}
-
 	return productID, true
 }
 

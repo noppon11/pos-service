@@ -11,6 +11,7 @@ import (
 	appErr "pos-service/internal/errors"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,7 +22,7 @@ func TestPostgresProductRepository_Create_Success(t *testing.T) {
 
 	repo := NewPostgresProductRepository(db)
 
-	product := domain.ProductResponse{
+	product := domain.Product{
 		Name:       "Botox 100u",
 		SKU:        "BOT-100",
 		Price:      6500,
@@ -86,6 +87,22 @@ func TestPostgresProductRepository_ListByTenantIDAndBranchID_Success(t *testing.
 
 	repo := NewPostgresProductRepository(db)
 
+	filter := ProductListFilter{
+		Page:  1,
+		Limit: 20,
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta(`
+		SELECT COUNT(*)
+		FROM products
+		WHERE tenant_id = $1
+		  AND branch_id = $2
+		  AND deleted_at IS NULL
+		  AND ($3 = '' OR category_id = $3)
+	`)).
+		WithArgs("aura-bkk", "bkk-001", "").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
 	rows := sqlmock.NewRows([]string{
 		"product_id", "name", "sku", "price", "category_id", "unit", "is_active", "deleted_at",
 	}).AddRow(
@@ -100,13 +117,22 @@ func TestPostgresProductRepository_ListByTenantIDAndBranchID_Success(t *testing.
 		WHERE tenant_id = $1
 		  AND branch_id = $2
 		  AND deleted_at IS NULL
+		  AND ($3 = '' OR category_id = $3)
 		ORDER BY created_at DESC
+		LIMIT $4 OFFSET $5
 	`)).
-		WithArgs("aura-bkk", "bkk-001").
+		WithArgs("aura-bkk", "bkk-001", "", 20, 0).
 		WillReturnRows(rows)
 
-	products, err := repo.ListByTenantIDAndBranchID(context.Background(), "aura-bkk", "bkk-001")
+	products, total, err := repo.ListByTenantIDAndBranchID(
+		context.Background(),
+		"aura-bkk",
+		"bkk-001",
+		filter,
+	)
+
 	assert.NoError(t, err)
+	assert.Equal(t, 2, total)
 	assert.Len(t, products, 2)
 	assert.Equal(t, "prod-001", products[0].ProductID)
 
@@ -177,7 +203,7 @@ func TestPostgresProductRepository_Update_Success(t *testing.T) {
 
 	repo := NewPostgresProductRepository(db)
 
-	product := domain.ProductResponse{
+	product := domain.Product{
 		Name:       "Botox 120u",
 		SKU:        "BOT-120",
 		Price:      7500,
@@ -237,7 +263,7 @@ func TestPostgresProductRepository_Update_NotFound(t *testing.T) {
 
 	repo := NewPostgresProductRepository(db)
 
-	product := domain.ProductResponse{
+	product := domain.Product{
 		Name:       "Botox 120u",
 		SKU:        "BOT-120",
 		Price:      7500,
@@ -362,5 +388,108 @@ func TestPostgresProductRepository_ScanDeletedAt(t *testing.T) {
 	assert.NotNil(t, product)
 	assert.NotNil(t, product.DeletedAt)
 
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPostgresProductRepository_Create_DuplicateSKU(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
+
+	repo := NewPostgresProductRepository(db)
+
+	product := domain.Product{
+		Name:       "Botox 100u",
+		SKU:        "BOT-100",
+		Price:      6500,
+		CategoryID: "treatment",
+		Unit:       "unit",
+		IsActive:   true,
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta(`
+		INSERT INTO products (
+			product_id,
+			tenant_id,
+			branch_id,
+			name,
+			sku,
+			price,
+			category_id,
+			unit,
+			is_active
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING product_id, name, sku, price, category_id, unit, is_active
+	`)).
+		WithArgs(
+			sqlmock.AnyArg(),
+			"aura-bkk",
+			"bkk-001",
+			product.Name,
+			product.SKU,
+			product.Price,
+			product.CategoryID,
+			product.Unit,
+			product.IsActive,
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+
+	created, err := repo.Create(context.Background(), "aura-bkk", "bkk-001", product)
+
+	assert.Nil(t, created)
+	assert.ErrorIs(t, err, appErr.ErrProductAlreadyExists)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPostgresProductRepository_ListByTenantIDAndBranchID_WithCategoryFilterAndPagination(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer db.Close()
+
+	repo := NewPostgresProductRepository(db)
+
+	filter := ProductListFilter{
+		Page:       2,
+		Limit:      10,
+		CategoryID: "treatment",
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta(`
+		SELECT COUNT(*)
+		FROM products
+		WHERE tenant_id = $1
+		  AND branch_id = $2
+		  AND deleted_at IS NULL
+		  AND ($3 = '' OR category_id = $3)
+	`)).
+		WithArgs("aura-bkk", "bkk-001", "treatment").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(21))
+
+	rows := sqlmock.NewRows([]string{
+		"product_id", "name", "sku", "price", "category_id", "unit", "is_active", "deleted_at",
+	}).AddRow(
+		"prod-011", "Botox 50u", "BOT-50", 3500, "treatment", "unit", true, nil,
+	)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`
+		SELECT product_id, name, sku, price, category_id, unit, is_active, deleted_at
+		FROM products
+		WHERE tenant_id = $1
+		  AND branch_id = $2
+		  AND deleted_at IS NULL
+		  AND ($3 = '' OR category_id = $3)
+		ORDER BY created_at DESC
+		LIMIT $4 OFFSET $5
+	`)).
+		WithArgs("aura-bkk", "bkk-001", "treatment", 10, 10).
+		WillReturnRows(rows)
+
+	products, total, err := repo.ListByTenantIDAndBranchID(context.Background(), "aura-bkk", "bkk-001", filter)
+
+	assert.NoError(t, err)
+	assert.Len(t, products, 1)
+	assert.Equal(t, 21, total)
+	assert.Equal(t, "prod-011", products[0].ProductID)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
