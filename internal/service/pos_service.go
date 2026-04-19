@@ -7,6 +7,7 @@ import (
 	"pos-service/internal/domain"
 	"pos-service/internal/dto"
 	appErr "pos-service/internal/errors"
+	"pos-service/internal/repository"
 )
 
 type BranchRepository interface {
@@ -15,16 +16,53 @@ type BranchRepository interface {
 }
 
 type ProductRepository interface {
-	ListByTenantIDAndBranchID(ctx context.Context, tenantID string, branchID string) ([]domain.ProductResponse, error)
-	GetByTenantIDBranchIDAndProductID(ctx context.Context, tenantID string, branchID string, productID string) (*domain.ProductResponse, error)
-	Create(ctx context.Context, tenantID string, branchID string, product domain.ProductResponse) (*domain.ProductResponse, error)
-	Update(ctx context.Context, tenantID string, branchID string, productID string, product domain.ProductResponse) (*domain.ProductResponse, error)
-	Delete(ctx context.Context, tenantID string, branchID string, productID string) error
+	ListByTenantIDAndBranchID(
+		ctx context.Context,
+		tenantID string,
+		branchID string,
+		filter repository.ProductListFilter,
+	) ([]domain.Product, int, error)
+
+	GetByTenantIDBranchIDAndProductID(
+		ctx context.Context,
+		tenantID string,
+		branchID string,
+		productID string,
+	) (*domain.Product, error)
+
+	Create(
+		ctx context.Context,
+		tenantID string,
+		branchID string,
+		product domain.Product,
+	) (*domain.Product, error)
+
+	Update(
+		ctx context.Context,
+		tenantID string,
+		branchID string,
+		productID string,
+		product domain.Product,
+	) (*domain.Product, error)
+
+	Delete(
+		ctx context.Context,
+		tenantID string,
+		branchID string,
+		productID string,
+	) error
 }
 
 type Validator interface {
 	ValidateBranch(branch domain.BranchResponse) error
-	ValidateProduct(product domain.ProductResponse) error
+	ValidateProduct(product domain.Product) error
+}
+
+type ProductListResult struct {
+	Items []domain.Product
+	Total int
+	Page  int
+	Limit int
 }
 
 type PosService struct {
@@ -52,7 +90,6 @@ func (s *PosService) GetHealth(ctx context.Context) error {
 	if s.db == nil {
 		return appErr.ErrDBNotConfigured
 	}
-
 	return s.db.PingContext(ctx)
 }
 
@@ -60,9 +97,6 @@ func (s *PosService) GetHealthByTenantID(ctx context.Context, tenantID string) e
 	if s.db == nil {
 		return appErr.ErrDBNotConfigured
 	}
-
-	// For now this is still DB-level health only.
-	// If you want tenant-specific health, add a repository existence check here.
 	return s.db.PingContext(ctx)
 }
 
@@ -94,11 +128,9 @@ func (s *PosService) GetBranchDetail(ctx context.Context, tenantID, branchID str
 	if err != nil {
 		return nil, err
 	}
-
 	if branch == nil {
 		return nil, appErr.ErrBranchNotFound
 	}
-
 	if err := s.validateBranch(*branch); err != nil {
 		return nil, err
 	}
@@ -106,12 +138,26 @@ func (s *PosService) GetBranchDetail(ctx context.Context, tenantID, branchID str
 	return branch, nil
 }
 
-func (s *PosService) GetProducts(ctx context.Context, tenantID, branchID string) ([]domain.ProductResponse, error) {
+func (s *PosService) GetProducts(
+	ctx context.Context,
+	tenantID, branchID string,
+	filter repository.ProductListFilter,
+) (*ProductListResult, error) {
 	if s.productRepo == nil {
 		return nil, appErr.ErrProductRepoNotConfigured
 	}
 
-	products, err := s.productRepo.ListByTenantIDAndBranchID(ctx, tenantID, branchID)
+	if filter.Page <= 0 {
+		filter.Page = 1
+	}
+	if filter.Limit <= 0 {
+		filter.Limit = 20
+	}
+	if filter.Limit > 100 {
+		filter.Limit = 100
+	}
+
+	products, total, err := s.productRepo.ListByTenantIDAndBranchID(ctx, tenantID, branchID, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -122,10 +168,15 @@ func (s *PosService) GetProducts(ctx context.Context, tenantID, branchID string)
 		}
 	}
 
-	return products, nil
+	return &ProductListResult{
+		Items: products,
+		Total: total,
+		Page:  filter.Page,
+		Limit: filter.Limit,
+	}, nil
 }
 
-func (s *PosService) GetProductByID(ctx context.Context, tenantID, branchID, productID string) (*domain.ProductResponse, error) {
+func (s *PosService) GetProductByID(ctx context.Context, tenantID, branchID, productID string) (*domain.Product, error) {
 	if s.productRepo == nil {
 		return nil, appErr.ErrProductRepoNotConfigured
 	}
@@ -134,11 +185,9 @@ func (s *PosService) GetProductByID(ctx context.Context, tenantID, branchID, pro
 	if err != nil {
 		return nil, err
 	}
-
 	if product == nil {
 		return nil, appErr.ErrProductNotFound
 	}
-
 	if err := s.validateProduct(*product); err != nil {
 		return nil, err
 	}
@@ -150,19 +199,21 @@ func (s *PosService) CreateNewProduct(
 	ctx context.Context,
 	tenantID, branchID string,
 	req dto.CreateProductRequest,
-) (*domain.ProductResponse, error) {
+) (*domain.Product, error) {
 	if err := s.ensureProductDependencies(); err != nil {
 		return nil, err
 	}
-
 	if tenantID == "" {
 		return nil, appErr.ErrTenantIDRequired
 	}
 	if branchID == "" {
 		return nil, appErr.ErrBranchIDRequired
 	}
+	if err := s.validateProductScope(ctx, tenantID, branchID); err != nil {
+		return nil, err
+	}
 
-	product := domain.ProductResponse{
+	product := domain.Product{
 		Name:       req.Name,
 		SKU:        req.SKU,
 		Price:      req.Price,
@@ -179,35 +230,32 @@ func (s *PosService) CreateNewProduct(
 	if err != nil {
 		return nil, err
 	}
-
 	if created == nil {
 		return nil, appErr.ErrCreateProductFailed
 	}
-
 	if err := s.validateProduct(*created); err != nil {
 		return nil, err
 	}
 
 	return created, nil
 }
+
 func (s *PosService) UpdateProduct(
 	ctx context.Context,
 	tenantID, branchID, productID string,
 	req dto.UpdateProductRequest,
-) (*domain.ProductResponse, error) {
+) (*domain.Product, error) {
 	if err := s.ensureProductDependencies(); err != nil {
 		return nil, err
 	}
-
 	if productID == "" {
 		return nil, appErr.ErrProductIDRequired
 	}
-
 	if err := s.validateProductScope(ctx, tenantID, branchID); err != nil {
 		return nil, err
 	}
 
-	product := domain.ProductResponse{
+	product := domain.Product{
 		Name:       req.Name,
 		SKU:        req.SKU,
 		Price:      req.Price,
@@ -224,11 +272,9 @@ func (s *PosService) UpdateProduct(
 	if err != nil {
 		return nil, err
 	}
-
 	if updated == nil {
 		return nil, appErr.ErrProductNotFound
 	}
-
 	if err := s.validateProduct(*updated); err != nil {
 		return nil, err
 	}
@@ -240,7 +286,6 @@ func (s *PosService) DeleteProduct(ctx context.Context, tenantID, branchID, prod
 	if err := s.ensureProductDependencies(); err != nil {
 		return err
 	}
-
 	if err := s.validateProductScope(ctx, tenantID, branchID); err != nil {
 		return err
 	}
@@ -260,15 +305,13 @@ func (s *PosService) validateBranch(branch domain.BranchResponse) error {
 	if s.validator == nil {
 		return appErr.ErrValidatorNotConfigured
 	}
-
 	return s.validator.ValidateBranch(branch)
 }
 
-func (s *PosService) validateProduct(product domain.ProductResponse) error {
+func (s *PosService) validateProduct(product domain.Product) error {
 	if s.validator == nil {
 		return appErr.ErrValidatorNotConfigured
 	}
-
 	return s.validator.ValidateProduct(product)
 }
 
@@ -276,11 +319,9 @@ func (s *PosService) ensureProductDependencies() error {
 	if s.productRepo == nil {
 		return appErr.ErrProductRepoNotConfigured
 	}
-
 	if s.branchRepo == nil {
 		return appErr.ErrBranchRepoNotConfigured
 	}
-
 	return nil
 }
 
@@ -295,7 +336,6 @@ func (s *PosService) validateProductScope(
 	if branch == nil {
 		return appErr.ErrBranchNotFound
 	}
-
 	return nil
 }
 

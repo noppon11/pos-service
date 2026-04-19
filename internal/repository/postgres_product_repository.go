@@ -3,11 +3,13 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"pos-service/internal/domain"
 	appErr "pos-service/internal/errors"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type PostgresProductRepository struct {
@@ -22,25 +24,51 @@ func (r *PostgresProductRepository) ListByTenantIDAndBranchID(
 	ctx context.Context,
 	tenantID string,
 	branchID string,
-) ([]domain.ProductResponse, error) {
+	filter ProductListFilter,
+) ([]domain.Product, int, error) {
+	if filter.Page <= 0 {
+		filter.Page = 1
+	}
+	if filter.Limit <= 0 {
+		filter.Limit = 20
+	}
+
+	offset := (filter.Page - 1) * filter.Limit
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM products
+		WHERE tenant_id = $1
+		  AND branch_id = $2
+		  AND deleted_at IS NULL
+		  AND ($3 = '' OR category_id = $3)
+	`
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, countQuery, tenantID, branchID, filter.CategoryID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	query := `
 		SELECT product_id, name, sku, price, category_id, unit, is_active, deleted_at
 		FROM products
 		WHERE tenant_id = $1
 		  AND branch_id = $2
 		  AND deleted_at IS NULL
+		  AND ($3 = '' OR category_id = $3)
 		ORDER BY created_at DESC
+		LIMIT $4 OFFSET $5
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID, branchID)
+	rows, err := r.db.QueryContext(ctx, query, tenantID, branchID, filter.CategoryID, filter.Limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
-	var products []domain.ProductResponse
+	var products []domain.Product
 	for rows.Next() {
-		var p domain.ProductResponse
+		var p domain.Product
 		var deletedAt sql.NullTime
 
 		if err := rows.Scan(
@@ -53,7 +81,7 @@ func (r *PostgresProductRepository) ListByTenantIDAndBranchID(
 			&p.IsActive,
 			&deletedAt,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		if deletedAt.Valid {
@@ -64,10 +92,10 @@ func (r *PostgresProductRepository) ListByTenantIDAndBranchID(
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return products, nil
+	return products, total, nil
 }
 
 func (r *PostgresProductRepository) GetByTenantIDBranchIDAndProductID(
@@ -75,17 +103,14 @@ func (r *PostgresProductRepository) GetByTenantIDBranchIDAndProductID(
 	tenantID string,
 	branchID string,
 	productID string,
-) (*domain.ProductResponse, error) {
+) (*domain.Product, error) {
 	query := `
 		SELECT product_id, name, sku, price, category_id, unit, is_active, deleted_at
 		FROM products
-		WHERE tenant_id = $1
-		  AND branch_id = $2
-		  AND product_id = $3
-		  AND deleted_at IS NULL
+		WHERE tenant_id = $1 AND branch_id = $2 AND product_id = $3 AND deleted_at IS NULL
 	`
 
-	var p domain.ProductResponse
+	var p domain.Product
 	var deletedAt sql.NullTime
 
 	err := r.db.QueryRowContext(ctx, query, tenantID, branchID, productID).Scan(
@@ -116,8 +141,8 @@ func (r *PostgresProductRepository) Create(
 	ctx context.Context,
 	tenantID string,
 	branchID string,
-	product domain.ProductResponse,
-) (*domain.ProductResponse, error) {
+	product domain.Product,
+) (*domain.Product, error) {
 	product.ProductID = uuid.New().String()
 
 	query := `
@@ -136,7 +161,7 @@ func (r *PostgresProductRepository) Create(
 		RETURNING product_id, name, sku, price, category_id, unit, is_active
 	`
 
-	var created domain.ProductResponse
+	var created domain.Product
 	err := r.db.QueryRowContext(
 		ctx,
 		query,
@@ -158,7 +183,12 @@ func (r *PostgresProductRepository) Create(
 		&created.Unit,
 		&created.IsActive,
 	)
+
 	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+			return nil, appErr.ErrProductAlreadyExists
+		}
 		return nil, err
 	}
 
@@ -170,18 +200,17 @@ func (r *PostgresProductRepository) Update(
 	tenantID string,
 	branchID string,
 	productID string,
-	product domain.ProductResponse,
-) (*domain.ProductResponse, error) {
+	product domain.Product,
+) (*domain.Product, error) {
 	query := `
 		UPDATE products
-		SET
-			name = $4,
-			sku = $5,
-			price = $6,
-			category_id = $7,
-			unit = $8,
-			is_active = $9,
-			updated_at = NOW()
+		SET name = $4,
+		    sku = $5,
+		    price = $6,
+		    category_id = $7,
+		    unit = $8,
+		    is_active = $9,
+		    updated_at = NOW()
 		WHERE tenant_id = $1
 		  AND branch_id = $2
 		  AND product_id = $3
@@ -189,7 +218,7 @@ func (r *PostgresProductRepository) Update(
 		RETURNING product_id, name, sku, price, category_id, unit, is_active, deleted_at
 	`
 
-	var updated domain.ProductResponse
+	var updated domain.Product
 	var deletedAt sql.NullTime
 
 	err := r.db.QueryRowContext(
@@ -218,6 +247,10 @@ func (r *PostgresProductRepository) Update(
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+			return nil, appErr.ErrProductAlreadyExists
+		}
 		return nil, err
 	}
 
@@ -236,12 +269,8 @@ func (r *PostgresProductRepository) Delete(
 ) error {
 	query := `
 		UPDATE products
-		SET deleted_at = NOW(),
-		    updated_at = NOW()
-		WHERE tenant_id = $1
-		  AND branch_id = $2
-		  AND product_id = $3
-		  AND deleted_at IS NULL
+		SET deleted_at = NOW(), updated_at = NOW()
+		WHERE tenant_id = $1 AND branch_id = $2 AND product_id = $3 AND deleted_at IS NULL
 	`
 
 	result, err := r.db.ExecContext(ctx, query, tenantID, branchID, productID)

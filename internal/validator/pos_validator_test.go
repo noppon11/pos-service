@@ -176,12 +176,12 @@ func TestValidateProduct(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		product domain.ProductResponse
+		product domain.Product
 		wantErr bool
 	}{
 		{
 			name: "missing name",
-			product: domain.ProductResponse{
+			product: domain.Product{
 				SKU:        "BOT-50",
 				Price:      3500,
 				CategoryID: "treatment",
@@ -192,7 +192,7 @@ func TestValidateProduct(t *testing.T) {
 		},
 		{
 			name: "missing sku",
-			product: domain.ProductResponse{
+			product: domain.Product{
 				Name:       "Botox 50u",
 				Price:      3500,
 				CategoryID: "treatment",
@@ -203,7 +203,7 @@ func TestValidateProduct(t *testing.T) {
 		},
 		{
 			name: "negative price",
-			product: domain.ProductResponse{
+			product: domain.Product{
 				Name:       "Botox 50u",
 				SKU:        "BOT-50",
 				Price:      -1,
@@ -215,7 +215,7 @@ func TestValidateProduct(t *testing.T) {
 		},
 		{
 			name: "missing category id",
-			product: domain.ProductResponse{
+			product: domain.Product{
 				Name:     "Botox 50u",
 				SKU:      "BOT-50",
 				Price:    3500,
@@ -226,7 +226,7 @@ func TestValidateProduct(t *testing.T) {
 		},
 		{
 			name: "missing unit",
-			product: domain.ProductResponse{
+			product: domain.Product{
 				Name:       "Botox 50u",
 				SKU:        "BOT-50",
 				Price:      3500,
@@ -237,7 +237,7 @@ func TestValidateProduct(t *testing.T) {
 		},
 		{
 			name: "success",
-			product: domain.ProductResponse{
+			product: domain.Product{
 				ProductID:  "prod-001",
 				Name:       "Botox 50u",
 				SKU:        "BOT-50",
@@ -247,6 +247,18 @@ func TestValidateProduct(t *testing.T) {
 				IsActive:   true,
 			},
 			wantErr: false,
+		},
+		{
+			name: "zero price",
+			product: domain.Product{
+				Name:       "Botox 50u",
+				SKU:        "BOT-50",
+				Price:      0,
+				CategoryID: "treatment",
+				Unit:       "unit",
+				IsActive:   true,
+			},
+			wantErr: true,
 		},
 	}
 

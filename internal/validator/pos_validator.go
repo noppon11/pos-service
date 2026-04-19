@@ -22,7 +22,7 @@ type BranchValidator interface {
 }
 
 type ProductValidator interface {
-	ValidateProduct(product domain.ProductResponse) error
+	ValidateProduct(product domain.Product) error
 }
 
 var (
@@ -94,29 +94,24 @@ func (v *PosValidator) ValidateBranch(branch domain.BranchResponse) error {
 	return nil
 }
 
-func (v *PosValidator) ValidateProduct(product domain.ProductResponse) error {
-	if strings.TrimSpace(product.Name) == "" {
-		return appErr.ErrProductNameRequired
-	}
-
-	if strings.TrimSpace(product.SKU) == "" {
-		return appErr.ErrProductSKURequired
-	}
-
-	if product.Price < 0 {
-		return appErr.ErrInvalidProductPrice
-	}
-
-	if strings.TrimSpace(product.CategoryID) == "" {
-		return appErr.ErrCategoryIDRequired
-	}
-
-	if strings.TrimSpace(product.Unit) == "" {
-		return appErr.ErrUnitRequired
-	}
-
-	return nil
-}
+func (v *PosValidator) ValidateProduct(product domain.Product) error {
+     if strings.TrimSpace(product.Name) == "" {
+         return appErr.ErrProductNameRequired
+     }
+     if strings.TrimSpace(product.SKU) == "" {
+         return appErr.ErrProductSKURequired
+     }
+    if product.Price <= 0 {
+         return appErr.ErrInvalidProductPrice
+     }
+     if strings.TrimSpace(product.CategoryID) == "" {
+         return appErr.ErrCategoryIDRequired
+     }
+     if strings.TrimSpace(product.Unit) == "" {
+         return appErr.ErrUnitRequired
+     }
+     return nil
+ }
 
 func isValidBranchStatus(status string) bool {
 	switch status {
