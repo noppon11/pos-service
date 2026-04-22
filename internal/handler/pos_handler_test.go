@@ -419,7 +419,7 @@ func TestCreateProduct_Success(t *testing.T) {
 	req := dto.CreateProductRequest{
 		Name:       "Botox 100u",
 		SKU:        "BOT-100",
-		Price:      6500,
+		Price:      650000,
 		CategoryID: "treatment",
 		Unit:       "unit",
 		IsActive:   true,
@@ -458,7 +458,7 @@ func TestCreateProduct_Success(t *testing.T) {
 	assert.Equal(t, "prod-001", resp.ProductID)
 	assert.Equal(t, "Botox 100u", resp.Name)
 	assert.Equal(t, "BOT-100", resp.SKU)
-	assert.Equal(t, 6500.0, resp.Price)
+	assert.Equal(t, int64(650000), resp.Price)
 
 	mockValidator.AssertExpectations(t)
 	mockService.AssertExpectations(t)

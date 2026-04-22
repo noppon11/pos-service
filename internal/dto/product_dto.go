@@ -7,21 +7,21 @@ import (
 )
 
 type CreateProductRequest struct {
-	Name       string  `json:"name" binding:"required"`
-	SKU        string  `json:"sku" binding:"required"`
-	Price      float64 `json:"price" binding:"required"`
-	CategoryID string  `json:"category_id" binding:"required"`
-	Unit       string  `json:"unit" binding:"required"`
-	IsActive   bool    `json:"is_active"`
+	Name       string `json:"name" binding:"required"`
+	SKU        string `json:"sku" binding:"required"`
+	Price      int64  `json:"price" binding:"required"`
+	CategoryID string `json:"category_id" binding:"required"`
+	Unit       string `json:"unit" binding:"required"`
+	IsActive   bool   `json:"is_active"`
 }
 
 type UpdateProductRequest struct {
-	Name       string  `json:"name" binding:"required"`
-	SKU        string  `json:"sku" binding:"required"`
-	Price      float64 `json:"price" binding:"required"`
-	CategoryID string  `json:"category_id" binding:"required"`
-	Unit       string  `json:"unit" binding:"required"`
-	IsActive   bool    `json:"is_active"`
+	Name       string `json:"name" binding:"required"`
+	SKU        string `json:"sku" binding:"required"`
+	Price      int64  `json:"price" binding:"required"`
+	CategoryID string `json:"category_id" binding:"required"`
+	Unit       string `json:"unit" binding:"required"`
+	IsActive   bool   `json:"is_active"`
 }
 
 type ListProductsQuery struct {
@@ -34,7 +34,7 @@ type ProductResponse struct {
 	ProductID  string  `json:"product_id"`
 	Name       string  `json:"name"`
 	SKU        string  `json:"sku"`
-	Price      float64 `json:"price"`
+	Price      int64   `json:"price"`
 	CategoryID string  `json:"category_id"`
 	Unit       string  `json:"unit"`
 	IsActive   bool    `json:"is_active"`
