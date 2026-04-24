@@ -2,28 +2,43 @@ package routes
 
 import (
 	"pos-service/internal/handler"
+	"pos-service/internal/middleware"
+	"pos-service/internal/service"
+	"pos-service/internal/utils"
+
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRoutes(r *gin.Engine, posHandler *handler.PosHandler) {
+func SetupRoutes(
+	r *gin.Engine,
+	posHandler *handler.PosHandler,
+	authHandler *handler.AuthHandler,
+	authService *service.AuthService,
+	jwtManager *utils.JWTManager,
+) {
 	r.GET("/health", posHandler.GetHealth)
 	r.GET("/readiness", posHandler.Readiness)
+
 	api := r.Group("/api/v1")
 	{
-		// GET
-		api.GET("/tenants/:tenant_id/health", posHandler.GetHealthByTenantID)
-		api.GET("/tenants/:tenant_id/branches", posHandler.GetBranchesByTenantID)
-		api.GET("/tenants/:tenant_id/branches/:branch_id", posHandler.GetByTenantIDAndBranchID)
-		api.GET("/tenants/:tenant_id/branches/:branch_id/products", posHandler.GetAllProducts)
-		api.GET("/tenants/:tenant_id/branches/:branch_id/products/:product_id", posHandler.GetProductByID)
+		auth := api.Group("/auth")
+		{
+			auth.POST("/login", authHandler.Login)
+			auth.GET("/me",
+				middleware.RequireAuth(jwtManager),
+				authHandler.Me,
+			)
+		}
 
-		// POST
-		api.POST("/tenants/:tenant_id/branches/:branch_id/products", posHandler.CreateProduct)
-
-		// PUT
-		api.PUT("/tenants/:tenant_id/branches/:branch_id/products/:product_id", posHandler.UpdateProduct)
-
-		// DELETE
-		api.DELETE("/tenants/:tenant_id/branches/:branch_id/products/:product_id", posHandler.DeleteProduct)
+		protectedProducts := api.Group("/tenants/:tenantID/branches/:branchID")
+		protectedProducts.Use(middleware.RequireAuth(jwtManager))
+		protectedProducts.Use(middleware.RequireTenantBranchAccess(authService))
+		{
+			protectedProducts.GET("/products", posHandler.GetAllProducts)
+			protectedProducts.POST("/products", posHandler.CreateProduct)
+			protectedProducts.GET("/products/:productID", posHandler.GetProductByID)
+			protectedProducts.PUT("/products/:productID", posHandler.UpdateProduct)
+			protectedProducts.DELETE("/products/:productID", posHandler.DeleteProduct)
+		}
 	}
 }
